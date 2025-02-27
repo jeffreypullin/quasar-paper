@@ -1,0 +1,9 @@
+name: cli
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bcftools
+  - csvtk
+  - plink2
+  - plink

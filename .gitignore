@@ -2,3 +2,6 @@
 .nextflow
 nextflow
 *workspace
+.nextflow.log*
+output
+build

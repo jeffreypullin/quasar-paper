@@ -1,0 +1,8 @@
+name: quasar-paper
+channels:
+  - conda-forge
+dependencies:
+  - scanpy
+  - python-igraph
+  - leidenalg
+  - openpyxl

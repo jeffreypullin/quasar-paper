@@ -1,0 +1,12 @@
+name: gtf
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - numpy
+  - pandas
+  - bx-python
+  - gzip
+  - pip
+  - pip: 
+    - qtl

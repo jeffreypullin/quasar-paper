@@ -7,9 +7,7 @@ suppressPackageStartupMessages({
 })
 
 args <- commandArgs(trailingOnly = TRUE)
-raw_feat_anno_data_path <- args[[1]]
-
-raw_feat_annot_data <- read_tsv(raw_feat_anno_data_path)
+raw_feat_annot_data <- read_delim(args[[1]])
 
 feat_anno_data <- raw_feat_annot_data |>
   select(-ind) |>

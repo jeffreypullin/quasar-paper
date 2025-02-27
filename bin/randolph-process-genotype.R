@@ -6,9 +6,6 @@ suppressPackageStartupMessages({
   library(stringr)
 })
 
-# Append missing snp_id column name to start of header.
-#system("sed -i '1s/^/snp_id\t/' genotypes.txt")
-
 args <- commandArgs(trailingOnly = TRUE)
 ped_path <- args[[1]]
 
