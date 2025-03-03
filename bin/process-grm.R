@@ -1,15 +1,16 @@
 #!/usr/bin/env Rscript
 
 library(readr)
+library(Matrix)
 
 args <- commandArgs(trailingOnly = TRUE)
 prefix <- args[[1]]
 
 grm_id <- read_tsv("king_ibd_out.king.id")
-grm_mat <- read_tsv("king_ibd_out.king", col_names = FALSE)
+raw_grm <- as.matrix(read_tsv("king_ibd_out.king", col_names = FALSE))
 
-tmp <- 2 * grm_mat
-tmp <- cbind(grm_id$IID, tmp)
+grm <- as.matrix(nearPD(2 * raw_grm, corr = TRUE)$mat)
+tmp <- cbind(grm_id$IID, grm)
 colnames(tmp) <- c("sample_id", grm_id$IID)
 tmp <- as.data.frame(tmp)
 

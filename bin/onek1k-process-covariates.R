@@ -15,7 +15,11 @@ all_covs <- expr_covs |>
     int = 1,
     sex = sex - 1,
   ) |>
-  select(int, sex, age, paste0("PC_", 1:5), paste0("geno_pc", 1:5)) |>
+  select(
+    sample_id, int, sex, age,
+    paste0("PC_", 1:5),
+    paste0("geno_pc", 1:5)
+  ) |>
   rename_with(
     ~ paste0("expr_pc", str_sub(.x, -1), recycle0 = TRUE),
     starts_with("PC_")

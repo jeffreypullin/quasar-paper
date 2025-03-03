@@ -41,8 +41,7 @@ workflow {
       .map({ [it[0], it[2]] })
       .join(all_covs)
       .combine(bed_files)
-      .first()
-    
+
     RUN_QUASAR(
       quasar_input, 
       grm,
@@ -174,12 +173,15 @@ process ONEK1K_PROCESS_COVARIATES {
 }
 
 process RUN_QUASAR {
+    label "tiny"
 
     input: 
       tuple val(cell_type), val(pheno), val(covs), val(chr), val(bed)
       val grm 
       val feat_anno
-    output: tuple val(chr), val(cell_type), path("todo")
+    output: tuple val(chr), val(cell_type), 
+        path("${chr}-${cell_type}-cis-region.txt.gz"), 
+        path("${chr}-${cell_type}-cis-variant.txt.gz")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
@@ -189,8 +191,11 @@ process RUN_QUASAR {
       -p "$pheno" \
       -c "$covs" \
       -g "$grm" \
+      -o "${chr}-${cell_type}" \
       -m lmm \
       --verbose
+    gzip "${chr}-${cell_type}-cis-variant.txt"
+    gzip "${chr}-${cell_type}-cis-region.txt"
     """
 }
 
