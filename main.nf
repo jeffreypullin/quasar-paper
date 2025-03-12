@@ -19,7 +19,7 @@ workflow {
 
     // OneK1K data.
     cell_types = channel.fromList(params.onek1k_cell_types)
-    cell_type_subsets = ONEK1K_CREATE_CELLTYPE_PB(
+    cell_type_pb = ONEK1K_CREATE_CELLTYPE_PB(
         params.onek1k_raw_single_cell_data,
         params.onek1k_supp_tables,
         cell_types
@@ -35,11 +35,22 @@ workflow {
     all_bed = ONEK1K_CONCAT_GENOTYPE_DATA(bed_files.map({ it[1] }).collect())
     geno_pcs = ONEK1K_COMPUTE_GENOTYPE_PCS(all_bed)
     grm = ONEK1K_CREATE_GRM(all_bed)
-    all_covs = ONEK1K_PROCESS_COVARIATES(cell_type_subsets, geno_pcs) 
+    all_covs = ONEK1K_PROCESS_COVARIATES(cell_type_pb, geno_pcs) 
 
-    quasar_input = cell_type_subsets
+    linear_models = channel.of('lm', 'lmm')
+    generalised_models = channel.of('glm', 'glmm')
+
+    mean_pb = cell_type_pb
       .map({ [it[0], it[2]] })
       .join(all_covs)
+      .combine(linear_models)
+    sum_pb = cell_type_pb
+      .map({ [it[0], it[3]] })
+      .join(all_covs)
+      .combine(generalised_models)
+
+    quasar_input = mean_pb
+      .concat(sum_pb)
       .combine(bed_files)
 
     RUN_QUASAR(
@@ -79,7 +90,10 @@ process ONEK1K_CREATE_CELLTYPE_PB {
         val raw_sc_data
         val supp_tables
         val cell_type
-    output: tuple val(cell_type), path("onek1k-${cell_type}-cov.tsv"), path("onek1k-${cell_type}-pheno-mean.txt")
+    output: tuple val(cell_type), 
+        path("onek1k-${cell_type}-cov.tsv"), 
+        path("onek1k-${cell_type}-pheno-mean.txt"),
+        path("onek1k-${cell_type}-pheno-sum.txt")
 
     script:
     """
@@ -162,7 +176,7 @@ process ONEK1K_CREATE_GRM {
 process ONEK1K_PROCESS_COVARIATES {
 
     input: 
-        tuple val(cell_type), val(covs), val(pheno)
+        tuple val(cell_type), val(covs), val(mean_pheno), val(sum_pheno)
         val geno_pcs 
     output: tuple val(cell_type), path("onek1k-${cell_type}-all-covs.tsv")
     
@@ -174,14 +188,15 @@ process ONEK1K_PROCESS_COVARIATES {
 
 process RUN_QUASAR {
     label "tiny"
+    cache false
 
     input: 
-      tuple val(cell_type), val(pheno), val(covs), val(chr), val(bed)
+      tuple val(cell_type), val(pheno), val(covs), val(model), val(chr), val(bed)
       val grm 
       val feat_anno
-    output: tuple val(chr), val(cell_type), 
-        path("${chr}-${cell_type}-cis-region.txt.gz"), 
-        path("${chr}-${cell_type}-cis-variant.txt.gz")
+    output: tuple val(chr), val(cell_type), val(model),
+        path("${chr}-${cell_type}-${model}-cis-region.txt.gz"), 
+        path("${chr}-${cell_type}-${model}-cis-variant.txt.gz")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
@@ -191,11 +206,11 @@ process RUN_QUASAR {
       -p "$pheno" \
       -c "$covs" \
       -g "$grm" \
-      -o "${chr}-${cell_type}" \
-      -m lmm \
+      -o "${chr}-${cell_type}-${model}" \
+      -m $model \
       --verbose
-    gzip "${chr}-${cell_type}-cis-variant.txt"
-    gzip "${chr}-${cell_type}-cis-region.txt"
+    gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
+    gzip "${chr}-${cell_type}-${model}-cis-region.txt"
     """
 }
 

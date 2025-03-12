@@ -68,11 +68,24 @@ indiv_ids = pb.obs['individual'].tolist()
 
 first_line = indiv_ids
 first_line.insert(0, 'feature_id')
-out_string = f"onek1k-{cell_label}-pheno-mean.txt"
-with open(out_string, 'w') as fp:
-    fp.write('\t'.join(first_line) + '\n') 
+mean_file_name = f"onek1k-{cell_label}-pheno-mean.txt"
+sum_file_name = f"onek1k-{cell_label}-pheno-sum.txt"
+
+# Write out mean file.
+with open(mean_file_name, 'w') as fmean:
+    fmean.write('\t'.join(first_line) + '\n') 
     for id in gene_ids:
         gene_res_list = flatten(pb[:, id].X.toarray().tolist())
         line = gene_res_list
         line.insert(0, id)
-        fp.write('\t'.join(map(str, line)) + '\n') 
+        fmean.write('\t'.join(map(str, line)) + '\n') 
+
+# Write out sum file.
+with open(sum_file_name, 'w') as fsum:
+    fsum.write('\t'.join(first_line) + '\n') 
+    for id in gene_ids:
+        gene_res_list = flatten(pb[:, id].layers['counts'].toarray().tolist())
+        line = gene_res_list
+        line.insert(0, id)
+        fsum.write('\t'.join(map(str, line)) + '\n') 
+
