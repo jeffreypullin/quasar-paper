@@ -1,12 +1,5 @@
 #!/usr/bin/env nextflow
 
-// Randolph.
-params.randolph_raw_cov_data = file("data/randolph/individual_meta_data_for_GE_with_scaledCovars_with_geneProps.txt")
-params.randolph_raw_feat_anno_data = file("data/randolph/GRCh38.92_gene_positions.txt")
-params.randolph_raw_genotype_data = file("data/randolph/genotypes.txt")
-params.randolph_raw_single_cell_data = file("data/randolph/mergedAllCells_withCellTypeIdents_CLEAN.rds")
-
-// OneK1K.
 params.onek1k_raw_single_cell_data = file("data/onek1k/OneK1K_cohort_gene_expression_matrix_14_celltypes.h5ad.gz")
 params.onek1k_supp_tables = file("data/onek1k/science.abf3041_tables_s6_to_s19/science.abf3041_tables_s6_to_s19.xlsx")
 params.onek1k_feature_annot = file("data/onek1k/Homo_sapiens.GRCh37.82.bed")
@@ -58,16 +51,8 @@ workflow {
       grm,
       params.onek1k_feature_annot 
     )
-
-    // Randolph data.
-    chrs = channel.from(1..22)
-    RANDOLPH_PROCESS_COVARIATES(params.randolph_raw_cov_data)
-    RANDOLPH_PROCESS_FEAT_ANNO_DATA(params.randolph_raw_feat_anno_data)
-    randolph_geno_data = RANDOLPH_PROCESS_GENOTYPE_DATA(params.randolph_raw_genotype_data)
-    //randolph_grm = RANDOLPH_CREATE_GRM(randolph_geno_data)
-    RANDOLPH_SPLIT_GENOTYPE_DATA(chrs.merge(randolph_geno_data))
 }
-
+ 
 // OneK1K data.
 process ONEK1K_EXTRACT_INDIV_IDS {
     conda "$projectDir/envs/scanpy.yaml"
@@ -80,7 +65,6 @@ process ONEK1K_EXTRACT_INDIV_IDS {
     onek1k-extract-indiv-ids.py $raw_sc_data
     """
 }
-
 
 process ONEK1K_CREATE_CELLTYPE_PB {
     conda "$projectDir/envs/scanpy.yaml"
@@ -213,97 +197,3 @@ process RUN_QUASAR {
     gzip "${chr}-${cell_type}-${model}-cis-region.txt"
     """
 }
-
-
-
-
-// Randolph data.
-process RANDOLPH_PROCESS_COVARIATES {
-
-    input: file raw_cov_data
-    output: path("cov-data.tsv")
-
-    script: 
-    """
-    sed -i '1s/^/sample_id,/' ${raw_cov_data}
-    randolph-process-covariates.R ${raw_cov_data}
-    """
-}
-
-process RANDOLPH_PROCESS_FEAT_ANNO_DATA {
-
-    input: val raw_feat_anno_data
-    output: path("feat-anno-data.tsv")
-
-    script:
-    """
-    sed '1s/.*/ind\tfeature_id\tchrom\tstart\tend/' ${raw_feat_anno_data} > tmp-feat-anno-data.tsv
-    randolph-process-feat-anno.R tmp-feat-anno-data.tsv
-    """
-}
-
-process RANDOLPH_PROCESS_GENOTYPE_DATA {
-
-    input: val randolph_genotype_data
-    output: tuple path("randolph.bed"), path("randolph.map")
-
-    // First convert the txt file to a ped file then into a bed.
-    script:
-    """
-    module load plink/1.9
-    sed '1s/^/snp_id\t/' ${randolph_genotype_data} > tmp-geno.txt
-    randolph-process-genotype.R tmp-geno.txt
-    plink --file randolph --make-bed --out randolph
-    """
-}
-
-process RANDOLPH_CREATE_GRM {
-
-    input: tuple val(randolph_bed), val(randolph_map)
-    output: path("randolph_grm.tsv")
-
-    script:
-    """
-    randolph-make-grm.sh ${randolph_bed.getParent().toString() + '/' + randolph_bed.getSimpleName()}
-    randolph-process-grm.R
-    """
-}
-
-process RANDOLPH_SPLIT_GENOTYPE_DATA {
-
-    input: tuple val(chr), val(randolph_bed), val(randolph_map)
-    output: path("randolph_${chr}.bed")
-
-    script:
-    """
-    module load plink
-    plink2 --bfile ${randolph_bed.getParent().toString() + '/' + randolph_bed.getSimpleName()} \
-      --chr ${chr} \
-      --make-bed \
-      --out randolph_${chr}
-    """
-}
-
-/*
-process RANDOLPH_PROCESS_SINGLE_CELL_DATA {
-    # TODO
-}
-*/
-
-/*
-process RUN_QUASAR {
-
-    # TODO
-    script:
-    """
-    ./quasar -b /home/jp2045/quasar/randolph-data/randolph_1 \
-    -f /home/jp2045/quasar/randolph-data/randolph_feat_anno.tsv \
-    -p /home/jp2045/quasar/randolph-data/b_corrected_exp.tsv  \
-    -c /home/jp2045/quasar/randolph-data/randolph_cov.tsv \
-    -g /home/jp2045/quasar/randolph-data/randolph_grm.tsv \
-    -m lmm \
-    --verbose
-    """
-
-}
-*/
