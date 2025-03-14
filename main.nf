@@ -46,11 +46,29 @@ workflow {
       .concat(sum_pb)
       .combine(bed_files)
 
+    /*
     RUN_QUASAR(
       quasar_input, 
       grm,
       params.onek1k_feature_annot 
     )
+    */
+
+    // TensorQTL setup.
+    pheno_bed_input = cell_type_pb
+      .map({ [it[0], it[2]] })
+
+    pheno_bed = ONEK1K_MAKE_PHENO_BED(pheno_bed_input, params.onek1k_feature_annot)
+    t_covs = ONEK1K_TRANSPOSE_COVS(all_covs)
+
+    tensorqtl_input = pheno_bed
+      .join(t_covs)
+      .combine(all_bed)
+
+    RUN_TENSORQTL(tensorqtl_input)
+
+    // jaxQTL setup.
+    // TODO
 }
  
 // OneK1K data.
@@ -167,6 +185,48 @@ process ONEK1K_PROCESS_COVARIATES {
     script:
     """
     onek1k-process-covariates.R "$covs" "$geno_pcs" "$cell_type"
+    """
+}
+
+process ONEK1K_MAKE_PHENO_BED {
+
+    input:
+        tuple val(cell_type), val(mean_pheno)
+        val feat_anno
+    output: tuple val(cell_type), path("onek1k-${cell_type}-pheno-bed.bed")
+
+    script:
+    """
+    onek1k-make-pheno-bed.R "$mean_pheno" "$feat_anno" "$cell_type"
+    """
+}
+
+process ONEK1K_TRANSPOSE_COVS {
+
+    input: tuple val(cell_type), val(covs)
+    output: tuple val(cell_type), path("onek1k-${cell_type}-t-all-covs.tsv")
+
+    script:
+    """
+    onek1k-transpose-covs.R "$covs" "$cell_type"
+    """
+}
+
+process RUN_TENSORQTL {
+    conda "$projectDir/envs/tensorqtl.yaml"
+    label "tiny"
+
+    input:
+      tuple val(cell_type), val(pheno), val(covs), val(bed)
+    output: tuple val(cell_type), path("onek1k-${cell_type}.cis_qtl.txt.gz") 
+
+    script:
+    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
+    """
+    head -n 2 "$pheno"
+    python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
+    --covariates "$covs" \
+    --mode cis
     """
 }
 
