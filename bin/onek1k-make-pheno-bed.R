@@ -15,6 +15,7 @@ feat_anno <- read_delim(
 )
 colnames(feat_anno) <- c("feature_id", "chrom", "start", "end")
 cell_type <- args[[3]]
+pb_type <- args[[4]]
 
 pheno_bed <- inner_join(feat_anno, pheno, by = "feature_id") |>
   rename(phenotype_id = feature_id, `#chr` = chrom) |>
@@ -23,5 +24,5 @@ pheno_bed <- inner_join(feat_anno, pheno, by = "feature_id") |>
 
 write_tsv(
   pheno_bed,
-  paste0("onek1k-", cell_type, "-pheno-bed.bed")
+  paste0("onek1k-", cell_type, "-pheno-", pb_type, ".bed")
 )

@@ -12,6 +12,7 @@ def flatten(xss):
 onek1k = sc.read_h5ad(sys.argv[1])
 supp_data = pd.read_excel(sys.argv[2], sheet_name="Table.S8")
 cell_label = sys.argv[3]
+pb_type = sys.argv[4]
 
 onek1k.layers["counts"] = onek1k.X.copy()
 sc.pp.normalize_total(onek1k)
@@ -72,20 +73,21 @@ mean_file_name = f"onek1k-{cell_label}-pheno-mean.txt"
 sum_file_name = f"onek1k-{cell_label}-pheno-sum.txt"
 
 # Write out mean file.
-with open(mean_file_name, 'w') as fmean:
-    fmean.write('\t'.join(first_line) + '\n') 
-    for id in gene_ids:
-        gene_res_list = flatten(pb[:, id].X.toarray().tolist())
-        line = gene_res_list
-        line.insert(0, id)
-        fmean.write('\t'.join(map(str, line)) + '\n') 
-
+if pb_type == "mean":
+    with open(mean_file_name, 'w') as fmean:
+        fmean.write('\t'.join(first_line) + '\n') 
+        for id in gene_ids:
+            gene_res_list = flatten(pb[:, id].X.toarray().tolist())
+            line = gene_res_list
+            line.insert(0, id)
+            fmean.write('\t'.join(map(str, line)) + '\n') 
 # Write out sum file.
-with open(sum_file_name, 'w') as fsum:
-    fsum.write('\t'.join(first_line) + '\n') 
-    for id in gene_ids:
-        gene_res_list = flatten(pb[:, id].layers['counts'].toarray().tolist())
-        line = gene_res_list
-        line.insert(0, id)
-        fsum.write('\t'.join(map(str, line)) + '\n') 
+elif pb_type == "sum":
+    with open(sum_file_name, 'w') as fsum:
+        fsum.write('\t'.join(first_line) + '\n') 
+        for id in gene_ids:
+            gene_res_list = flatten(pb[:, id].layers['counts'].toarray().tolist())
+            line = gene_res_list
+            line.insert(0, id)
+            fsum.write('\t'.join(map(str, line)) + '\n') 
 

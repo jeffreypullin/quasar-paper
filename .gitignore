@@ -5,3 +5,4 @@ nextflow
 .nextflow.log*
 output
 build
+envs/src

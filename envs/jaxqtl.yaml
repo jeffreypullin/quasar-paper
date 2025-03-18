@@ -1,0 +1,9 @@
+name: jaxqtl
+dependencies:
+- python=3.10.9
+- pip
+- pip:
+  - "--editable=git+https://github.com/mancusolab/jaxqtl.git@main#egg=jaxqtl"
+  - lineax
+  - qtl
+
