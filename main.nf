@@ -48,7 +48,6 @@ workflow {
       grm,
       params.onek1k_feature_annot 
     )
-    quasar_out.filter({it -> it[1] == "CD4 NC"}).view()
 
     pheno_bed = ONEK1K_MAKE_PHENO_BED(cell_type_pb, params.onek1k_feature_annot)
     t_covs = ONEK1K_TRANSPOSE_COVS(covs)
@@ -75,17 +74,12 @@ workflow {
             }
         })
         .map({ it -> [it, it[2].getBaseName()].flatten() } )
-        // FIXME: How do other cases occur?
-        .filter(it -> it[3].startsWith("chunk"))
-        .filter(it -> !it[2].startsWith("chunk"))
-
-    split_chunks.filter(it -> it[2].startsWith("chunk")).view()
 
     jaxqtl_input = jaxqtl_spec
         .combine(split_chunks, by: [0, 1])
         .combine(bed_files, by: 0)
         .combine(chrs.combine(covs), by: [0, 1])
-    
+
     RUN_JAXQTL(jaxqtl_input)
 }
  
@@ -235,7 +229,9 @@ process RUN_TENSORQTL {
 
     input:
       tuple val(cell_type), val(pb_type), val(pheno), val(covs), val(bed)
-    output: tuple val(cell_type), path("onek1k-${cell_type}.cis_qtl.txt.gz") 
+    output: tuple val(cell_type), 
+        path("onek1k-${cell_type}.cis_qtl.txt.gz"),
+        path("onek1k-${cell_type}.cis_qtl_pairs.*.parquet") 
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
@@ -243,6 +239,9 @@ process RUN_TENSORQTL {
     python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
       --covariates "$covs" \
       --mode cis
+    python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
+      --covariates "$covs" \
+      --mode cis_nominal
     """
 }
 
@@ -250,7 +249,7 @@ process ONEK1K_MAKE_GENELIST_CHUNKS {
     input: 
         tuple val(chr), val(cell_type), val(pheno_bed)
         val split_n
-    output: tuple val(chr), val(cell_type), path("chunk-*.tsv")
+    output: tuple val(chr), val(cell_type), path("chunk-*.tsv", arity: "1..*")
 
     script:
     """
@@ -304,7 +303,7 @@ process RUN_QUASAR {
       -c "$covs" \
       -g "$grm" \
       -o "${chr}-${cell_type}-lm" \
-      -m lm \
+      -m  lm \
       --verbose
     gzip "${chr}-${cell_type}-lm-cis-variant.txt"
     gzip "${chr}-${cell_type}-lm-cis-region.txt"
