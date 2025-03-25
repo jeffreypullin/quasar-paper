@@ -28,8 +28,9 @@ workflow {
     )
     chrs = vcf_files.map{ it -> it[0] }
     ids = ONEK1K_EXTRACT_INDIV_IDS(params.onek1k_raw_single_cell_data)
-    bed_files = ONEK1K_CONVERT_VCF_TO_BED(vcf_files, ids)
-    all_bed = ONEK1K_CONCAT_GENOTYPE_DATA(bed_files.map({ it[1] }).collect())
+    filt_vcf_files = ONEK1K_FILTER_VCF(vcf_files, ids)
+    bed_files = ONEK1K_CONVERT_VCF_TO_BED(filt_vcf_files)
+    all_bed = ONEK1K_CONCAT_BED_FILES(bed_files.map({ it[1] }).collect())
 
     geno_pcs = ONEK1K_COMPUTE_GENOTYPE_PCS(all_bed)
     grm = ONEK1K_CREATE_GRM(all_bed)
@@ -81,6 +82,20 @@ workflow {
         .combine(chrs.combine(covs), by: [0, 1])
 
     RUN_JAXQTL(jaxqtl_input)
+
+    // Run apex.
+    pheno_bed_gz = COMPRESS_AND_INDEX_BED(pheno_bed)
+    sparse_grm = TO_SPARSE_GRM_FORMAT(grm)
+
+    apex_input = pheno_bed_gz
+        .filter({ x -> x[1] == "mean" })
+        .combine(chrs)
+        .map({ it -> [it[4], it[0], it[1], it[2], it[3]] })
+        .combine(filt_vcf_files, by: 0)
+        .combine(chrs.combine(t_covs), by: [0, 1])
+        .combine(sparse_grm)
+    
+    RUN_APEX(apex_input) 
 }
  
 // OneK1K data.
@@ -114,26 +129,45 @@ process ONEK1K_CREATE_CELLTYPE_PB {
     """
 }
 
-process ONEK1K_CONVERT_VCF_TO_BED {
+process ONEK1K_FILTER_VCF {
+
     conda "$projectDir/envs/cli.yaml"
-    label "tiny"
 
     input: 
         tuple val(chr), val(vcf)
         val sample_file
+    output: tuple val(chr), path("filtered-${chr}.vcf.gz"), path("filtered-${chr}.vcf.gz.tbi")
+
+    shell:
+    """
+    bcftools view -S $sample_file $vcf > tmp.vcf
+    vcftools --vcf tmp.vcf \
+        --maf 0.05 \
+        --hwe 1e-6 \
+        --recode \
+        --recode-INFO-all \
+        --stdout \
+        --stdout | bgzip -c > "filtered-${chr}.vcf.gz"
+    tabix -p vcf "filtered-${chr}.vcf.gz"
+    """
+}
+
+process ONEK1K_CONVERT_VCF_TO_BED {
+    conda "$projectDir/envs/cli.yaml"
+    label "tiny"
+
+    input: tuple val(chr), val(vcf), val(vcf_tbi)
     output: tuple val(chr), path("onek1k-${chr}.bed")
 
     shell:
     '''
-    bcftools view -S !{sample_file} !{vcf} > tmp.vcf
-    plink2 --vcf tmp.vcf \
-        --maf 0.05 --hwe 1e-6 \
+    plink2 --vcf !{vcf} \
         --set-all-var-ids '@:#$r-$a' \
         --make-bed --out onek1k-!{chr} --const-fid
     '''
 }
 
-process ONEK1K_CONCAT_GENOTYPE_DATA {
+process ONEK1K_CONCAT_BED_FILES {
     conda "$projectDir/envs/cli.yaml"
     label "tiny"
 
@@ -144,7 +178,6 @@ process ONEK1K_CONCAT_GENOTYPE_DATA {
     """
     printf "%s\\n" $bed_files | tr -d '[],' | sort -V -t/ -k9 > all_bed_files.txt
     awk -F. '{print \$1".bed", \$1".bim", \$1".fam"}' all_bed_files.txt > all_files.txt
-    head all_files.txt
     plink --merge-list all_files.txt --make-bed --out onek1k-all
     """
 }
@@ -158,9 +191,8 @@ process ONEK1K_COMPUTE_GENOTYPE_PCS {
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
-    plink2 --bfile $prefix --maf 0.05 --hwe 1e-6 --make-bed --out ${prefix}_filtered --threads 2
-    plink2 --bfile ${prefix}_filtered --indep-pairwise 50000 200 0.05 --out onek1k_pruned_variants --threads 2 --const-fid 
-    plink2 --bfile ${prefix}_filtered --extract onek1k_pruned_variants.prune.in --make-bed --out onek1k_pruned --const-fid 
+    plink2 --bfile $prefix --indep-pairwise 50000 200 0.05 --out onek1k_pruned_variants --threads 2 --const-fid 
+    plink2 --bfile $prefix --extract onek1k_pruned_variants.prune.in --make-bed --out onek1k_pruned --const-fid 
     plink2 --bfile onek1k_pruned --pca 10
 
     cat plink2.eigenvec | \
@@ -179,9 +211,8 @@ process ONEK1K_CREATE_GRM {
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
-    plink2 --bfile $prefix --maf 0.05 --hwe 1e-6 --make-bed --out onek1k_filtered --threads 2
-    plink2 --bfile onek1k_filtered --indep-pairwise 250 50 0.2 --out onek1k_pruning_info --threads 2
-    plink2 --bfile onek1k_filtered --extract onek1k_pruning_info.prune.in --make-king square --out king_ibd_out --threads 2
+    plink2 --bfile $prefix --indep-pairwise 250 50 0.2 --out onek1k_pruning_info --threads 2
+    plink2 --bfile $prefix --extract onek1k_pruning_info.prune.in --make-king square --out king_ibd_out --threads 2
     process-grm.R onek1k
     """
 }
@@ -280,6 +311,52 @@ process RUN_JAXQTL {
       --addpc 0 \
       --standardize \
       --out "jaxqtl-${cell_type}_${chr}_${chunk_id}"
+    """
+}
+
+process COMPRESS_AND_INDEX_BED {
+    conda "$projectDir/envs/cli.yaml"
+
+    input: tuple val(chr), val(cell_type), val(bed)
+    output: tuple val(chr), val(cell_type), 
+        path("${cell_type}-${chr}-bed.gz"),
+        path("${cell_type}-${chr}-bed.gz.tbi")
+
+    script:
+    """ 
+    bgzip "$bed" -o "${cell_type}-${chr}-bed.gz"
+    tabix -p bed "${cell_type}-${chr}-bed.gz"
+    """
+}
+
+process TO_SPARSE_GRM_FORMAT {
+
+    input: val grm
+    output: path("onek1k-sparse-grm.tsv")
+
+    script: 
+    """
+    to-sparse-grm-format.R $grm
+    """
+}
+
+process RUN_APEX {
+    label "apex"
+
+    input: tuple val(chr), val(cell_type), val(pb_type), val(pheno_bed_gz), val(pheno_bed_gz_tbi), 
+        val(vcf), val(vcf_tbi), val(covs), val(sparse_grm)
+    output: tuple val(chr), val(cell_type), 
+        path("apex-${cell_type}-${chr}.cis_gene_table.txt.gz"),
+        path("apex-${cell_type}-${chr}.cis_sumstats.txt.gz")
+
+    script: 
+    """
+    /home/jp2045/quasar-paper/apex/bin/apex cis \
+        --vcf "$vcf" \
+        --bed "$pheno_bed_gz" \
+        --cov "$covs" \
+        --grm "$sparse_grm" \
+        --prefix "apex-${cell_type}-${chr}"
     """
 }
 
