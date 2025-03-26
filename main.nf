@@ -108,7 +108,8 @@ workflow {
         .map( { it -> [it[1], it[0], it[3]]})
         .groupTuple()
 
-    PLOT_CONCORDNACE(grouped_quasar_variant, tensorqtl_cis_nominal_out )
+    PLOT_CONCORDANCE(grouped_quasar_variant, tensorqtl_cis_nominal_out)
+    PLOT_POWER(grouped_quasar_variant, tensorqtl_cis_nominal_out)
 }
  
 // OneK1K data.
@@ -431,14 +432,14 @@ process RUN_QUASAR {
       -c "$covs" \
       -g "$grm" \
       -o "${chr}-${cell_type}-lm" \
-      -m lm \
+      -m  lm \
       --verbose
     gzip "${chr}-${cell_type}-lm-cis-variant.txt"
     gzip "${chr}-${cell_type}-lm-cis-region.txt"
     """
 }
 
-process PLOT_CONCORDNACE {
+process PLOT_CONCORDANCE {
     publishDir "output"
 
     input:
@@ -451,6 +452,20 @@ process PLOT_CONCORDNACE {
     echo $variants_list | tr ',' '\n' | tr -d '[]' | sed 's/.*/"&"/' > quasar_files.txt
     echo $pairs_list | tr ',' '\n' | tr -d '[]' | sed 's/.*/"&"/' > tensorqtl_files.txt
     plot-concordance.R quasar_files.txt tensorqtl_files.txt
+    """
+}
+
+process PLOT_POWER {
+    publishDir "output"
+
+    input:
+        tuple val(cell_type), val(chrs), val(variants_list) 
+        tuple val(cell_type), val(pairs_list)
+    output: path("plot.pdf")
+
+    script:
+    """
+    plot-power.R "${variants_list.collect()}" "${pairs_list.collect()}"
     """
 }
 
