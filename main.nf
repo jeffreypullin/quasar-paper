@@ -42,6 +42,7 @@ workflow {
       .map({it -> [it[0], it[1], it[3]]})
       .join(covs)
       .combine(bed_files)
+      .filter( { it -> it[0] == "B IN" })
     
     // Run quasar.
     quasar_out = RUN_QUASAR(
@@ -58,8 +59,10 @@ workflow {
       .filter({ x -> x[1] == "mean" })
       .join(t_covs)
       .combine(all_bed)
+      .filter( { it -> it[0] == "B IN"})
 
-    tensorqtl_out = RUN_TENSORQTL(tensorqtl_input)
+    //RUN_TENSORQTL_CIS(tensorqtl_input)
+    tensorqtl_cis_nominal_out = RUN_TENSORQTL_CIS_NOMINAL(tensorqtl_input)
     
     // Run jaxQTL.
     jaxqtl_spec = pheno_bed
@@ -80,8 +83,11 @@ workflow {
         .combine(split_chunks, by: [0, 1])
         .combine(bed_files, by: 0)
         .combine(chrs.combine(covs), by: [0, 1])
+        .filter( { it -> it[1] == "B IN"})
+        .map( { it -> [it, it[0].substring(3).toInteger()].flatten()})
 
-    RUN_JAXQTL(jaxqtl_input)
+    RUN_JAXQTL_CIS(jaxqtl_input)
+    RUN_JAXQTL_CIS_NOMINAL(jaxqtl_input)
 
     // Run apex.
     pheno_bed_gz = COMPRESS_AND_INDEX_BED(pheno_bed)
@@ -94,8 +100,15 @@ workflow {
         .combine(filt_vcf_files, by: 0)
         .combine(chrs.combine(t_covs), by: [0, 1])
         .combine(sparse_grm)
+        .filter( { it -> it[1] == "B IN"})
     
     RUN_APEX(apex_input) 
+
+    grouped_quasar_variant = quasar_out
+        .map( { it -> [it[1], it[0], it[3]]})
+        .groupTuple()
+
+    PLOT_CONCORDNACE(grouped_quasar_variant, tensorqtl_cis_nominal_out )
 }
  
 // OneK1K data.
@@ -178,7 +191,7 @@ process ONEK1K_CONCAT_BED_FILES {
     """
     printf "%s\\n" $bed_files | tr -d '[],' | sort -V -t/ -k9 > all_bed_files.txt
     awk -F. '{print \$1".bed", \$1".bim", \$1".fam"}' all_bed_files.txt > all_files.txt
-    plink --merge-list all_files.txt --make-bed --out onek1k-all
+    plink --keep-allele-order --merge-list all_files.txt --make-bed --out onek1k-all
     """
 }
 
@@ -254,15 +267,13 @@ process ONEK1K_TRANSPOSE_COVS {
     """
 }
 
-process RUN_TENSORQTL {
+process RUN_TENSORQTL_CIS {
     conda "$projectDir/envs/tensorqtl.yaml"
-    label "tiny"
+    label "tensorqtl"
 
     input:
       tuple val(cell_type), val(pb_type), val(pheno), val(covs), val(bed)
-    output: tuple val(cell_type), 
-        path("onek1k-${cell_type}.cis_qtl.txt.gz"),
-        path("onek1k-${cell_type}.cis_qtl_pairs.*.parquet") 
+    output: tuple val(cell_type), path("onek1k-${cell_type}.cis_qtl.txt.gz")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
@@ -270,6 +281,20 @@ process RUN_TENSORQTL {
     python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
       --covariates "$covs" \
       --mode cis
+    """
+}
+
+process RUN_TENSORQTL_CIS_NOMINAL {
+    conda "$projectDir/envs/tensorqtl.yaml"
+    label "tensorqtl"
+
+    input:
+      tuple val(cell_type), val(pb_type), val(pheno), val(covs), val(bed)
+    output: tuple val(cell_type), path("onek1k-${cell_type}.cis_qtl_pairs.*.parquet") 
+
+    script:
+    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
+    """
     python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
       --covariates "$covs" \
       --mode cis_nominal
@@ -288,12 +313,12 @@ process ONEK1K_MAKE_GENELIST_CHUNKS {
     """
 }
 
-process RUN_JAXQTL {
+process RUN_JAXQTL_CIS {
     conda "$projectDir/envs/jaxqtl.yaml"
-    label "tiny"
+    label "jaxqtl"
 
-    input: tuple val(chr), val(cell_type), val(pheno), val(chunk), val(chunk_id), val(bed), val(covs)
-    output: tuple val(chr), val(cell_type), path("jaxqtl-${cell_type}_${chr}_${chunk_id}.cis_score.tsv.gz")
+    input: tuple val(chr), val(cell_type), val(pheno), val(chunk), val(chunk_id), val(bed), val(covs), val(chr_num)
+    output: tuple val(chr), val(cell_type), path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_score.tsv.gz")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
@@ -310,7 +335,33 @@ process RUN_JAXQTL {
       --nperm 1000 \
       --addpc 0 \
       --standardize \
-      --out "jaxqtl-${cell_type}_${chr}_${chunk_id}"
+      --out "jaxqtl-${cell_type}-${chr}-${chunk_id}"
+    """
+}
+
+process RUN_JAXQTL_CIS_NOMINAL {
+    conda "$projectDir/envs/jaxqtl.yaml"
+    label "jaxqtl"
+
+    input: tuple val(chr), val(cell_type), val(pheno), val(chunk), val(chunk_id), val(bed), val(covs), val(chr_num)
+    output: tuple val(chr), val(cell_type), path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_qtl_pairs.${chr_num}.score.parquet")
+
+    script:
+    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
+    """
+    jaxqtl \
+      --geno "$prefix" \
+      --covar "$covs" \
+      --pheno "$pheno" \
+      --model "NB" \
+      --mode "nominal" \
+      --window 500000 \
+      --genelist $chunk \
+      --test-method "score" \
+      --nperm 1000 \
+      --addpc 0 \
+      --standardize \
+      --out "jaxqtl-${cell_type}-${chr}-${chunk_id}"
     """
 }
 
@@ -380,9 +431,26 @@ process RUN_QUASAR {
       -c "$covs" \
       -g "$grm" \
       -o "${chr}-${cell_type}-lm" \
-      -m  lm \
+      -m lm \
       --verbose
     gzip "${chr}-${cell_type}-lm-cis-variant.txt"
     gzip "${chr}-${cell_type}-lm-cis-region.txt"
     """
 }
+
+process PLOT_CONCORDNACE {
+    publishDir "output"
+
+    input:
+        tuple val(cell_type), val(chrs), val(variants_list) 
+        tuple val(cell_type), val(pairs_list)
+    output: path("plot.pdf")
+
+    script:
+    """
+    echo $variants_list | tr ',' '\n' | tr -d '[]' | sed 's/.*/"&"/' > quasar_files.txt
+    echo $pairs_list | tr ',' '\n' | tr -d '[]' | sed 's/.*/"&"/' > tensorqtl_files.txt
+    plot-concordance.R quasar_files.txt tensorqtl_files.txt
+    """
+}
+
