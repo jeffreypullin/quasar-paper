@@ -56,4 +56,4 @@ p <- tibble(chr, n_sig_quasar, n_sig_tensorqtl) |>
   geom_col() + 
   facet_wrap(~chr, scales = "free_y")
 
-ggsave("plot.pdf", p)
+ggsave("plot-power.pdf", p)

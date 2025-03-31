@@ -52,11 +52,14 @@ workflow {
     )
 
     pheno_bed = ONEK1K_MAKE_PHENO_BED(cell_type_pb, params.onek1k_feature_annot)
+    norm_pheno_bed = NORMALISE_PHENO_BED(pheno_bed
+        .filter( {it -> it[1] == "mean"} )
+        .map( { it -> [it[0], it[2]] } )
+    )
     t_covs = ONEK1K_TRANSPOSE_COVS(covs)
 
     // Run TensorQTL.
-    tensorqtl_input = pheno_bed
-      .filter({ x -> x[1] == "mean" })
+    tensorqtl_input = norm_pheno_bed
       .join(t_covs)
       .combine(all_bed)
       .filter( { it -> it[0] == "B IN"})
@@ -257,6 +260,17 @@ process ONEK1K_MAKE_PHENO_BED {
     """
 }
 
+process NORMALISE_PHENO_BED {
+
+   input: tuple val(cell_type), val(pheno_bed)
+   output: tuple val(cell_type), path("onek1k-${cell_type}-pheno-norm.bed")
+
+   script:
+   """
+   onek1k-norm-pheno-bed.R "$pheno_bed" "$cell_type"
+   """
+}
+
 process ONEK1K_TRANSPOSE_COVS {
 
     input: tuple val(cell_type), val(covs)
@@ -290,7 +304,7 @@ process RUN_TENSORQTL_CIS_NOMINAL {
     label "tensorqtl"
 
     input:
-      tuple val(cell_type), val(pb_type), val(pheno), val(covs), val(bed)
+      tuple val(cell_type), val(pheno), val(covs), val(bed)
     output: tuple val(cell_type), path("onek1k-${cell_type}.cis_qtl_pairs.*.parquet") 
 
     script:
@@ -445,7 +459,7 @@ process PLOT_CONCORDANCE {
     input:
         tuple val(cell_type), val(chrs), val(variants_list) 
         tuple val(cell_type), val(pairs_list)
-    output: path("plot.pdf")
+    output: path("plot-concordance.pdf")
 
     script:
     """
@@ -461,7 +475,7 @@ process PLOT_POWER {
     input:
         tuple val(cell_type), val(chrs), val(variants_list) 
         tuple val(cell_type), val(pairs_list)
-    output: path("plot.pdf")
+    output: path("plot-power.pdf")
 
     script:
     """

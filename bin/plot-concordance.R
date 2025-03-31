@@ -65,7 +65,7 @@ for (i in seq_len(nrow(qtl_output_data))) {
     geom_point()
     geom_abline()
   p <- p1 + p2 + p3 
-  ggsave("plot.pdf", p)
+  ggsave("plot-concordance.pdf", p)
   break
 }
 
