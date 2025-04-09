@@ -1,7 +1,10 @@
 
-method_lookup <- c(
-  "nlogp_hlm" = "HLM",
-  "nlogp_naive_linear" = "LM (Linear)",
-  "nlogp_naive_quad" = "LM (Quadratic)",
-  "nlogp_robust" = "Robust LM"
-)
+to_r_vec <- function(str) {
+    str <- str_replace(str, "\\[", "\\(")
+    str <- str_replace(str, "\\]", "\\)")
+    str <- str_replace_all(str, "([^,\\(\\)]+)", "'\\1'")
+    str <- paste0("c", str)
+    out <- eval(parse(text = str))
+    out <- str_trim(out)
+    out
+}

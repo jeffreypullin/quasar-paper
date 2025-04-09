@@ -8,6 +8,7 @@ params.onek1k_cell_types = [
     'NK R', 'Plasma', 'B Mem', 'B IN', 'Mono C', 'Mono NC', 'DC'
 ]
 params.pb_types = ['mean', 'sum']
+params.quasar_spec = "data/quasar-spec.tsv"
 
 workflow {
 
@@ -36,29 +37,35 @@ workflow {
     grm = ONEK1K_CREATE_GRM(all_bed)
 
     covs = ONEK1K_PROCESS_COVARIATES(cell_type_pb.filter({it -> it[1] == "mean"}), geno_pcs) 
-
-    quasar_input = cell_type_pb 
-      .filter({ x -> x[1] == "mean" })
-      .map({it -> [it[0], it[1], it[3]]})
-      .join(covs)
-      .combine(bed_files)
-      .filter( { it -> it[0] == "B IN" })
-    
-    // Run quasar.
-    quasar_out = RUN_QUASAR(
-      quasar_input, 
-      grm,
-      params.onek1k_feature_annot 
-    )
-
     pheno_bed = ONEK1K_MAKE_PHENO_BED(cell_type_pb, params.onek1k_feature_annot)
+
+    // Run quasar.
+    quasar_spec = channel
+      .fromPath(params.quasar_spec)
+      .splitCsv()
+      .combine(chrs)
+      .combine(cell_types)
+      .map({ it -> [it[2], it[3], it[0], it[1]] })
+
+    quasar_input = pheno_bed
+      .combine(chrs)
+      .map({ it -> [it[3], it[0], it[1], it[2]] })
+      .combine(bed_files, by: 0)
+      .combine(chrs.combine(covs), by: [0, 1])
+      .combine(grm)
+      .combine(quasar_spec, by: [0, 1, 2])
+      .filter( { it -> it[1] == "B IN" })
+      .filter( { it -> it[7] == "lm" || it[7] == "glm"} )
+
+    quasar_out = RUN_QUASAR(quasar_input)
+
+    // Run TensorQTL.
     norm_pheno_bed = NORMALISE_PHENO_BED(pheno_bed
         .filter( {it -> it[1] == "mean"} )
         .map( { it -> [it[0], it[2]] } )
     )
     t_covs = ONEK1K_TRANSPOSE_COVS(covs)
 
-    // Run TensorQTL.
     tensorqtl_input = norm_pheno_bed
       .join(t_covs)
       .combine(all_bed)
@@ -74,6 +81,7 @@ workflow {
       .map({ it -> [it[3], it[0], it[2]] })
     
     chunks = ONEK1K_MAKE_GENELIST_CHUNKS(jaxqtl_spec, 100)
+    jaxqtl_covs = PROCESS_JAXQTL_COVARIATES(covs)
     split_chunks = chunks
         .flatMap({ chr, cell_type, chunks ->
             chunks.collect { chunk ->
@@ -85,12 +93,12 @@ workflow {
     jaxqtl_input = jaxqtl_spec
         .combine(split_chunks, by: [0, 1])
         .combine(bed_files, by: 0)
-        .combine(chrs.combine(covs), by: [0, 1])
+        .combine(chrs.combine(jaxqtl_covs), by: [0, 1])
         .filter( { it -> it[1] == "B IN"})
         .map( { it -> [it, it[0].substring(3).toInteger()].flatten()})
 
     RUN_JAXQTL_CIS(jaxqtl_input)
-    RUN_JAXQTL_CIS_NOMINAL(jaxqtl_input)
+    jaxqtl_out = RUN_JAXQTL_CIS_NOMINAL(jaxqtl_input)
 
     // Run apex.
     pheno_bed_gz = COMPRESS_AND_INDEX_BED(pheno_bed)
@@ -107,11 +115,20 @@ workflow {
     
     RUN_APEX(apex_input) 
 
+    // Make plots.
     grouped_quasar_variant = quasar_out
         .map( { it -> [it[1], it[0], it[3]]})
         .groupTuple()
 
-    PLOT_CONCORDANCE(grouped_quasar_variant, tensorqtl_cis_nominal_out)
+    grouped_jaxqtl_variant = jaxqtl_out
+        .map( { it -> [it[1], it[0], it[2]]})
+        .groupTuple() 
+
+    PLOT_CONCORDANCE(
+        grouped_quasar_variant, 
+        tensorqtl_cis_nominal_out,
+        grouped_jaxqtl_variant
+    )
     PLOT_POWER(grouped_quasar_variant, tensorqtl_cis_nominal_out)
 }
  
@@ -244,6 +261,17 @@ process ONEK1K_PROCESS_COVARIATES {
     script:
     """
     onek1k-process-covariates.R "$covs" "$geno_pcs" "$cell_type"
+    """
+}
+
+process PROCESS_JAXQTL_COVARIATES {
+
+    input: tuple val(cell_type), val(covs)
+    output: tuple val(cell_type), path("onek1k-${cell_type}-all-jaxqtl-covs.tsv")
+
+    script: 
+    """
+    process-jaxqtl-covariates.R "$covs" "$cell_type"
     """
 }
 
@@ -427,29 +455,27 @@ process RUN_APEX {
 }
 
 process RUN_QUASAR {
-    label "tiny"
+    label "quasar"
 
-    input: 
-      tuple val(cell_type), val(pb_type), val(pheno), val(covs), val(chr), val(bed)
-      val grm 
-      val feat_anno
+    input: tuple val(chr), val(cell_type), val(pb_type), val(pheno_bed), 
+        val(plink_bed), val(covs), val(grm), val(model)
     output: tuple val(chr), val(cell_type),
-        path("${chr}-${cell_type}-lm-cis-region.txt.gz"), 
-        path("${chr}-${cell_type}-lm-cis-variant.txt.gz")
+        path("${chr}-${cell_type}-${model}-cis-region.txt.gz"), 
+        path("${chr}-${cell_type}-${model}-cis-variant.txt.gz")
 
     script:
-    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
+    def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
     """
-    /home/jp2045/quasar/build/quasar -b $prefix \
-      -f "$feat_anno" \
-      -p "$pheno" \
+    /home/jp2045/quasar/build/quasar \
+      -p "$prefix" \
+      -b "$pheno_bed" \
       -c "$covs" \
       -g "$grm" \
-      -o "${chr}-${cell_type}-lm" \
-      -m  lm \
+      -o "${chr}-${cell_type}-${model}" \
+      -m                                          $model \
       --verbose
-    gzip "${chr}-${cell_type}-lm-cis-variant.txt"
-    gzip "${chr}-${cell_type}-lm-cis-region.txt"
+    gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
+    gzip "${chr}-${cell_type}-${model}-cis-region.txt"
     """
 }
 
@@ -457,15 +483,17 @@ process PLOT_CONCORDANCE {
     publishDir "output"
 
     input:
-        tuple val(cell_type), val(chrs), val(variants_list) 
-        tuple val(cell_type), val(pairs_list)
-    output: path("plot-concordance.pdf")
+        tuple val(cell_type), val(chrs), val(quasar_pairs_list) 
+        tuple val(cell_type), val(tensorqtl_pairs_list)
+        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list)
+    output: tuple path("plot-lm-concordance.pdf"), path("plot-glm-concordance.pdf")
 
     script:
     """
-    echo $variants_list | tr ',' '\n' | tr -d '[]' | sed 's/.*/"&"/' > quasar_files.txt
-    echo $pairs_list | tr ',' '\n' | tr -d '[]' | sed 's/.*/"&"/' > tensorqtl_files.txt
-    plot-concordance.R quasar_files.txt tensorqtl_files.txt
+    plot-concordance.R \
+        "${quasar_pairs_list.collect()}" \
+        "${tensorqtl_pairs_list.collect()}" \
+        "${jaxqtl_pairs_list.collect()}"
     """
 }
 
@@ -473,13 +501,13 @@ process PLOT_POWER {
     publishDir "output"
 
     input:
-        tuple val(cell_type), val(chrs), val(variants_list) 
-        tuple val(cell_type), val(pairs_list)
+        tuple val(cell_type), val(chrs), val(quasar_pairs_list) 
+        tuple val(cell_type), val(tensorqtl_pairs_list)
     output: path("plot-power.pdf")
 
     script:
     """
-    plot-power.R "${variants_list.collect()}" "${pairs_list.collect()}"
+    plot-power.R "${quasar_pairs_list.collect()}" "${tensorqtl_pairs_list.collect()}"
     """
 }
 
