@@ -55,7 +55,7 @@ workflow {
       .combine(grm)
       .combine(quasar_spec, by: [0, 1, 2])
       .filter( { it -> it[1] == "B IN" })
-      .filter( { it -> it[7] == "lm" || it[7] == "glm"} )
+      .filter( { it -> it[7] != "glmm" } )
 
     quasar_out = RUN_QUASAR(quasar_input)
 
@@ -102,6 +102,7 @@ workflow {
 
     // Run apex.
     pheno_bed_gz = COMPRESS_AND_INDEX_BED(pheno_bed)
+    apex_covs = PROCESS_APEX_COVS(t_covs)
     sparse_grm = TO_SPARSE_GRM_FORMAT(grm)
 
     apex_input = pheno_bed_gz
@@ -109,13 +110,13 @@ workflow {
         .combine(chrs)
         .map({ it -> [it[4], it[0], it[1], it[2], it[3]] })
         .combine(filt_vcf_files, by: 0)
-        .combine(chrs.combine(t_covs), by: [0, 1])
+        .combine(chrs.combine(apex_covs), by: [0, 1])
         .combine(sparse_grm)
         .filter( { it -> it[1] == "B IN"})
     
-    RUN_APEX(apex_input) 
+    apex_out = RUN_APEX(apex_input) 
 
-    // Make plots.
+    // Reformat output.
     grouped_quasar_variant = quasar_out
         .map( { it -> [it[1], it[0], it[3]]})
         .groupTuple()
@@ -124,10 +125,17 @@ workflow {
         .map( { it -> [it[1], it[0], it[2]]})
         .groupTuple() 
 
+    // it[3] is sumstats.
+    grouped_apex_out = apex_out
+        .map({ it -> [it[1], it[0], it[3]]})
+        .groupTuple()
+
+    // Make plots.
     PLOT_CONCORDANCE(
         grouped_quasar_variant, 
         tensorqtl_cis_nominal_out,
-        grouped_jaxqtl_variant
+        grouped_jaxqtl_variant,
+        grouped_apex_out
     )
     PLOT_POWER(grouped_quasar_variant, tensorqtl_cis_nominal_out)
 }
@@ -434,6 +442,17 @@ process TO_SPARSE_GRM_FORMAT {
     """
 }
 
+process PROCESS_APEX_COVS {
+
+    input: tuple val(cell_type), val(covs)
+    output: tuple val(cell_type), path("onek1k-${cell_type}-all-apex-covs.tsv")
+
+    script: 
+    """
+    process-apex-covariates.R "$covs" "$cell_type"
+    """
+}
+
 process RUN_APEX {
     label "apex"
 
@@ -441,7 +460,7 @@ process RUN_APEX {
         val(vcf), val(vcf_tbi), val(covs), val(sparse_grm)
     output: tuple val(chr), val(cell_type), 
         path("apex-${cell_type}-${chr}.cis_gene_table.txt.gz"),
-        path("apex-${cell_type}-${chr}.cis_sumstats.txt.gz")
+        path("apex-${cell_type}-${chr}.cis_long_table.txt.gz")
 
     script: 
     """
@@ -450,7 +469,9 @@ process RUN_APEX {
         --bed "$pheno_bed_gz" \
         --cov "$covs" \
         --grm "$sparse_grm" \
-        --prefix "apex-${cell_type}-${chr}"
+        --prefix "apex-${cell_type}-${chr}" \
+        --rankNormal \
+        --long
     """
 }
 
@@ -472,7 +493,7 @@ process RUN_QUASAR {
       -c "$covs" \
       -g "$grm" \
       -o "${chr}-${cell_type}-${model}" \
-      -m                                          $model \
+      -m                                                                                 $model \
       --verbose
     gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
     gzip "${chr}-${cell_type}-${model}-cis-region.txt"
@@ -486,14 +507,18 @@ process PLOT_CONCORDANCE {
         tuple val(cell_type), val(chrs), val(quasar_pairs_list) 
         tuple val(cell_type), val(tensorqtl_pairs_list)
         tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list)
-    output: tuple path("plot-lm-concordance.pdf"), path("plot-glm-concordance.pdf")
+        tuple val(cell_type), val(chrs), val(apex_pairs_list)
+    output: tuple path("plot-lm-concordance.pdf"), 
+        path("plot-glm-concordance.pdf"), 
+        path("plot-lmm-concordance.pdf")
 
     script:
     """
     plot-concordance.R \
         "${quasar_pairs_list.collect()}" \
         "${tensorqtl_pairs_list.collect()}" \
-        "${jaxqtl_pairs_list.collect()}"
+        "${jaxqtl_pairs_list.collect()}" \
+        "${apex_pairs_list.collect()}"
     """
 }
 
