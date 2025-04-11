@@ -138,6 +138,12 @@ workflow {
         grouped_apex_out
     )
     PLOT_POWER(grouped_quasar_variant, tensorqtl_cis_nominal_out)
+    
+    grouped_quasar_time = quasar_out
+        .map( { it -> [it[1], it[0], it[4]]})
+        .groupTuple()
+
+    PLOT_TIME(grouped_quasar_time)
 }
  
 // OneK1K data.
@@ -482,18 +488,20 @@ process RUN_QUASAR {
         val(plink_bed), val(covs), val(grm), val(model)
     output: tuple val(chr), val(cell_type),
         path("${chr}-${cell_type}-${model}-cis-region.txt.gz"), 
-        path("${chr}-${cell_type}-${model}-cis-variant.txt.gz")
+        path("${chr}-${cell_type}-${model}-cis-variant.txt.gz"),
+        path("${chr}-${cell_type}-${model}-time.txt")
 
     script:
     def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
     """
-    /home/jp2045/quasar/build/quasar \
+    /usr/bin/time -p -o "${chr}-${cell_type}-${model}-time.txt" \
+      /home/jp2045/quasar/build/quasar \
       -p "$prefix" \
       -b "$pheno_bed" \
       -c "$covs" \
       -g "$grm" \
       -o "${chr}-${cell_type}-${model}" \
-      -m                                                                                 $model \
+      -m      $model \
       --verbose
     gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
     gzip "${chr}-${cell_type}-${model}-cis-region.txt"
@@ -533,6 +541,18 @@ process PLOT_POWER {
     script:
     """
     plot-power.R "${quasar_pairs_list.collect()}" "${tensorqtl_pairs_list.collect()}"
+    """
+}
+
+process PLOT_TIME {
+    publishDir "output"
+
+    input: tuple val(cell_type), val(chrs), val(quasar_time_list) 
+    output: path("plot-time.pdf")
+
+    script:
+    """
+    plot-time.R "${quasar_time_list.collect()}" 
     """
 }
 
