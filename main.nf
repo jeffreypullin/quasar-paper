@@ -57,7 +57,7 @@ workflow {
       .filter( { it -> it[1] == "B IN" })
       .filter( { it -> it[7] != "glmm" } )
 
-    quasar_out = RUN_QUASAR(quasar_input)
+    quasar = RUN_QUASAR(quasar_input)
 
     // Run TensorQTL.
     norm_pheno_bed = NORMALISE_PHENO_BED(pheno_bed
@@ -71,8 +71,8 @@ workflow {
       .combine(all_bed)
       .filter( { it -> it[0] == "B IN"})
 
-    //RUN_TENSORQTL_CIS(tensorqtl_input)
-    tensorqtl_cis_nominal_out = RUN_TENSORQTL_CIS_NOMINAL(tensorqtl_input)
+    //tensorqtl_cis = RUN_TENSORQTL_CIS(tensorqtl_input)
+    tensorqtl_cis_nominal = RUN_TENSORQTL_CIS_NOMINAL(tensorqtl_input)
     
     // Run jaxQTL.
     jaxqtl_spec = pheno_bed
@@ -97,8 +97,8 @@ workflow {
         .filter( { it -> it[1] == "B IN"})
         .map( { it -> [it, it[0].substring(3).toInteger()].flatten()})
 
-    RUN_JAXQTL_CIS(jaxqtl_input)
-    jaxqtl_out = RUN_JAXQTL_CIS_NOMINAL(jaxqtl_input)
+    jaxqtl_cis = RUN_JAXQTL_CIS(jaxqtl_input)
+    jaxqtl_cis_nominal = RUN_JAXQTL_CIS_NOMINAL(jaxqtl_input)
 
     // Run apex.
     pheno_bed_gz = COMPRESS_AND_INDEX_BED(pheno_bed)
@@ -114,36 +114,41 @@ workflow {
         .combine(sparse_grm)
         .filter( { it -> it[1] == "B IN"})
     
-    apex_out = RUN_APEX(apex_input) 
+    apex = RUN_APEX(apex_input) 
 
     // Reformat output.
-    grouped_quasar_variant = quasar_out
-        .map( { it -> [it[1], it[0], it[3]]})
+    quasar_grouped = quasar
+        .map( { it -> [it[1], it[0], it[3], it[4]]})
         .groupTuple()
 
-    grouped_jaxqtl_variant = jaxqtl_out
-        .map( { it -> [it[1], it[0], it[2]]})
+    jaxqtl_cis_nominal_grouped = jaxqtl_cis_nominal
+        .map( { it -> [it[1], it[0], it[2], it[3]]})
+        .groupTuple() 
+    
+    jaxqtl_cis_grouped = jaxqtl_cis
+        .map( { it -> [it[1], it[0], it[2], it[3]]})
         .groupTuple() 
 
-    // it[3] is sumstats.
-    grouped_apex_out = apex_out
-        .map({ it -> [it[1], it[0], it[3]]})
+    apex_grouped = apex
+        .map({ it -> [it[1], it[0], it[3], it[4]]})
         .groupTuple()
 
     // Make plots.
     PLOT_CONCORDANCE(
-        grouped_quasar_variant, 
-        tensorqtl_cis_nominal_out,
-        grouped_jaxqtl_variant,
-        grouped_apex_out
+        quasar_grouped, 
+        tensorqtl_cis_nominal,
+        jaxqtl_cis_nominal_grouped,
+        apex_grouped
     )
-    PLOT_POWER(grouped_quasar_variant, tensorqtl_cis_nominal_out)
+    PLOT_POWER(quasar_grouped, tensorqtl_cis_nominal)
     
-    grouped_quasar_time = quasar_out
-        .map( { it -> [it[1], it[0], it[4]]})
-        .groupTuple()
-
-    PLOT_TIME(grouped_quasar_time)
+    PLOT_TIME(
+        quasar_grouped,
+        tensorqtl_cis_nominal,
+        jaxqtl_cis_nominal_grouped,
+        jaxqtl_cis_grouped,
+        apex_grouped
+    )
 }
  
 // OneK1K data.
@@ -326,16 +331,18 @@ process ONEK1K_TRANSPOSE_COVS {
 
 process RUN_TENSORQTL_CIS {
     conda "$projectDir/envs/tensorqtl.yaml"
-    label "tensorqtl"
+    label "tensorqtl_cis"
 
-    input:
-      tuple val(cell_type), val(pb_type), val(pheno), val(covs), val(bed)
-    output: tuple val(cell_type), path("onek1k-${cell_type}.cis_qtl.txt.gz")
+    input:  tuple val(cell_type), val(pheno), val(covs), val(bed)
+    output: tuple val(cell_type),
+        path("onek1k-${cell_type}.cis_qtl.txt.gz"),
+        path("${cell_type}-time.txt")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
-    python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
+    /usr/bin/time -p -o "${cell_type}-time.txt" \
+      python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
       --covariates "$covs" \
       --mode cis
     """
@@ -345,14 +352,16 @@ process RUN_TENSORQTL_CIS_NOMINAL {
     conda "$projectDir/envs/tensorqtl.yaml"
     label "tensorqtl"
 
-    input:
-      tuple val(cell_type), val(pheno), val(covs), val(bed)
-    output: tuple val(cell_type), path("onek1k-${cell_type}.cis_qtl_pairs.*.parquet") 
+    input: tuple val(cell_type), val(pheno), val(covs), val(bed)
+    output: tuple val(cell_type), 
+        path("onek1k-${cell_type}.cis_qtl_pairs.*.parquet"),
+        path("${cell_type}-time.txt")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
-    python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
+    /usr/bin/time -p -o "${cell_type}-time.txt" \
+       python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
       --covariates "$covs" \
       --mode cis_nominal
     """
@@ -375,12 +384,15 @@ process RUN_JAXQTL_CIS {
     label "jaxqtl"
 
     input: tuple val(chr), val(cell_type), val(pheno), val(chunk), val(chunk_id), val(bed), val(covs), val(chr_num)
-    output: tuple val(chr), val(cell_type), path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_score.tsv.gz")
+    output: tuple val(chr), val(cell_type), 
+        path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_score.tsv.gz"),
+        path("${cell_type}-${chr}-${chunk_id}-time.txt")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
-    jaxqtl \
+    /usr/bin/time -p -o "${cell_type}-${chr}-${chunk_id}-time.txt" \
+      jaxqtl \
       --geno "$prefix" \
       --covar "$covs" \
       --pheno "$pheno" \
@@ -401,12 +413,15 @@ process RUN_JAXQTL_CIS_NOMINAL {
     label "jaxqtl"
 
     input: tuple val(chr), val(cell_type), val(pheno), val(chunk), val(chunk_id), val(bed), val(covs), val(chr_num)
-    output: tuple val(chr), val(cell_type), path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_qtl_pairs.${chr_num}.score.parquet")
+    output: tuple val(chr), val(cell_type), 
+        path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_qtl_pairs.${chr_num}.score.parquet"),
+        path("${cell_type}-${chr}-${chunk_id}-time.txt")
 
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
-    jaxqtl \
+    /usr/bin/time -p -o "${cell_type}-${chr}-${chunk_id}-time.txt" \
+      jaxqtl \
       --geno "$prefix" \
       --covar "$covs" \
       --pheno "$pheno" \
@@ -466,11 +481,13 @@ process RUN_APEX {
         val(vcf), val(vcf_tbi), val(covs), val(sparse_grm)
     output: tuple val(chr), val(cell_type), 
         path("apex-${cell_type}-${chr}.cis_gene_table.txt.gz"),
-        path("apex-${cell_type}-${chr}.cis_long_table.txt.gz")
+        path("apex-${cell_type}-${chr}.cis_long_table.txt.gz"),
+        path("${cell_type}-${chr}-time.txt")        
 
     script: 
     """
-    /home/jp2045/quasar-paper/apex/bin/apex cis \
+    /usr/bin/time -p -o "${cell_type}-${chr}-time.txt" \
+        /home/jp2045/quasar-paper/apex/bin/apex cis \
         --vcf "$vcf" \
         --bed "$pheno_bed_gz" \
         --cov "$covs" \
@@ -501,7 +518,7 @@ process RUN_QUASAR {
       -c "$covs" \
       -g "$grm" \
       -o "${chr}-${cell_type}-${model}" \
-      -m      $model \
+      -m                $model \
       --verbose
     gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
     gzip "${chr}-${cell_type}-${model}-cis-region.txt"
@@ -512,10 +529,10 @@ process PLOT_CONCORDANCE {
     publishDir "output"
 
     input:
-        tuple val(cell_type), val(chrs), val(quasar_pairs_list) 
-        tuple val(cell_type), val(tensorqtl_pairs_list)
-        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list)
-        tuple val(cell_type), val(chrs), val(apex_pairs_list)
+        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
+        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
+        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_time)
+        tuple val(cell_type), val(chrs), val(apex_pairs_list), val(apex_time)
     output: tuple path("plot-lm-concordance.pdf"), 
         path("plot-glm-concordance.pdf"), 
         path("plot-lmm-concordance.pdf")
@@ -534,8 +551,8 @@ process PLOT_POWER {
     publishDir "output"
 
     input:
-        tuple val(cell_type), val(chrs), val(quasar_pairs_list) 
-        tuple val(cell_type), val(tensorqtl_pairs_list)
+        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
+        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
     output: path("plot-power.pdf")
 
     script:
@@ -547,12 +564,22 @@ process PLOT_POWER {
 process PLOT_TIME {
     publishDir "output"
 
-    input: tuple val(cell_type), val(chrs), val(quasar_time_list) 
+    input:
+        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
+        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
+        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+        tuple val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
+        tuple val(cell_type), val(chrs), val(apex_pairs_list), val(apex_time)
     output: path("plot-time.pdf")
 
     script:
     """
-    plot-time.R "${quasar_time_list.collect()}" 
+    plot-time.R \
+        "${quasar_time.collect()}" \
+        "${tensorqtl_time}" \
+        "${jaxqtl_cis_nominal_time.collect()}" \
+        "${jaxqtl_cis_time.collect()}" \
+        "${apex_time.collect()}"
     """
 }
 

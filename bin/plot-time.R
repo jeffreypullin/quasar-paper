@@ -8,6 +8,7 @@ suppressPackageStartupMessages({
   library(arrow)
   library(patchwork)
   library(tidyr)
+  library(purrr)
 })
 
 # FIXME: Make this more reproducible.
@@ -27,11 +28,64 @@ quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   mutate(chr = str_extract(quasar_file, "chr[0-9]+")) |>
   mutate(model = str_extract(quasar_file, "(?<=-)[^-]+(?=-time)")) |>
   rowwise() |>
-  mutate(time = read_time(quasar_file))
+  mutate(time = read_time(quasar_file)) |>
+  ungroup() |>
+  mutate(cell_type = "B IN") |>
+  summarise(time = sum(time), .by = c(cell_type, model)) |>
+  mutate(method = paste0("quasar-", model), type = "both") |>
+  select(-model)
 
-p <- quasar_data |>
-  ggplot(aes(model, time)) +
+tensorqtl_data <- tibble(tensorqtl_file = args[2]) |>
+  rowwise() |>
+  mutate(time = read_time(tensorqtl_file)) |>
+  ungroup() |>
+  mutate(cell_type = "B IN") |>
+  summarise(time = sum(time), .by = cell_type) |>
+  mutate(method = "tensorqtl", type = "both")
+
+jaxqtl_cis_nominal_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
+  mutate(chr = str_extract(jaxqtl_file, "chr[0-9]+")) |>
+  summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr") |>
+  rowwise() |>
+  mutate(time = sum(map_dbl(jaxqtl_file, read_time))) |>
+  ungroup() |>
+  mutate(cell_type = "B IN") |>
+  summarise(time = sum(time), .by = cell_type) |>
+  mutate(method = "jaxqtl", type = "cis_nominal")
+
+jaxqtl_cis_data <- tibble(jaxqtl_file = to_r_vec(args[4])) |>
+  mutate(chr = str_extract(jaxqtl_file, "chr[0-9]+")) |>
+  summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr") |>
+  rowwise() |>
+  mutate(time = sum(map_dbl(jaxqtl_file, read_time))) |>
+  ungroup() |>
+  mutate(cell_type = "B IN") |>
+  summarise(time = sum(time), .by = cell_type) |>
+  mutate(method = "jaxqtl", type = "cis")
+
+apex_data <- tibble(apex_file = to_r_vec(args[5])) |>
+  mutate(chr = str_extract(apex_file, "chr[0-9]+(?=\\-time)")) |>
+  rowwise() |>
+  mutate(time = read_time(apex_file)) |>
+  ungroup() |>
+  mutate(cell_type = "B IN") |>
+  summarise(time = sum(time), .by = cell_type) |>
+  mutate(method = "apex", type = "both")
+
+plot_data <- bind_rows(
+  apex_data,
+  quasar_data,
+  jaxqtl_cis_data,
+  jaxqtl_cis_nominal_data,
+  tensorqtl_data
+)
+
+time_plot <- plot_data |>
+  mutate(min = time / 60) |>
+  ggplot(aes(method, min, fill = type)) +
   geom_col() +
-  facet_wrap(~chr)
+  coord_flip() +
+  facet_wrap(~cell_type) +
+  theme_bw()
 
-ggsave("plot-time.pdf", p)
+ggsave("plot-time.pdf", time_plot)
