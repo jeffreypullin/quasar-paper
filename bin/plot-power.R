@@ -8,52 +8,38 @@ suppressPackageStartupMessages({
   library(arrow)
   library(patchwork)
   library(tidyr)
+  library(purrr)
+  library(forcats)
 })
 
+#FIXME: Make this more reproducible.
+source("/home/jp2045/quasar-paper/code/plot-utils.R")
 args <- commandArgs(trailingOnly = TRUE)
 
-to_r_vec <- function(str) {
-    str <- str_replace(str, "\\[", "\\(")
-    str <- str_replace(str, "\\]", "\\)")
-    str <- str_replace_all(str, "([^,\\(\\)]+)", "'\\1'")
-    str <- paste0("c", str)
-    out <- eval(parse(text = str))
-    out <- str_trim(out)
-    out
-}
+quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
+  mutate(chr = str_extract(quasar_file, "chr[0-9]+")) |>
+  mutate(model = str_extract(quasar_file, "(?<=-)[^-]+(?=-cis)")) |>
+  mutate(cell_type = "B IN") |>
+  mutate(method = paste0("quasar-", model)) |>
+  select(-model)
 
-qtl_output_data <- left_join(
-  tibble(tensorqtl_file = to_r_vec(args[2])) |>
-    mutate(chr = paste0("chr", str_extract(tensorqtl_file, "[0-9]+(?=\\.parquet)"))),
-   tibble(quasar_file = to_r_vec(args[1])) |>
-    mutate(chr = str_extract(quasar_file, "chr[0-9]+")), 
-  by = "chr"
-) |>
-  relocate(chr, tensorqtl_file)
+plot_data <- quasar_data |>
+  rowwise() |>
+  mutate(n_sig = read_tsv(quasar_file, show_col_types = FALSE) |>
+    mutate(sig = pvalue < 1e-6) |>
+    count(sig) |>
+    pull(n) |>
+    pluck(2)
+ ) |>
+ ungroup() |>
+ summarise(n_sig = sum(n_sig), .by = method) |>
+ print()
 
+power_plot <- plot_data |>
+  mutate(method = fct_reorder(factor(method), n_sig)) |>
+  ggplot(aes(method, n_sig)) +
+  geom_col() +
+  coord_flip() +
+  theme_bw()
 
-n_sig_quasar <- numeric()
-n_sig_tensorqtl <- numeric()
-chr <- character()
-for (i in seq_len(nrow(qtl_output_data))) {
-  
-  quasar_data <- read_tsv(
-    qtl_output_data$quasar_file[[i]], 
-    show_col_types = FALSE
-  )
-  tensorqtl_data <- read_parquet(
-    qtl_output_data$tensorqtl_file[[i]]
-  )
-
-  n_sig_quasar[[i]] <- sum(quasar_data$pvalue < 1e-6)
-  n_sig_tensorqtl[[i]] <- sum(tensorqtl_data$pval_nominal < 1e-6)
-  chr[[i]] <- qtl_output_data$chr[[i]]
-}
-
-p <- tibble(chr, n_sig_quasar, n_sig_tensorqtl) |>
-  pivot_longer(cols = -chr, names_to = "method", values_to = "n_sig") |>
-  ggplot(aes(method, n_sig)) + 
-  geom_col() + 
-  facet_wrap(~chr, scales = "free_y")
-
-ggsave("plot-power.pdf", p)
+ggsave("plot-power.pdf", power_plot)

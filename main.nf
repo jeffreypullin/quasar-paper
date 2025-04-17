@@ -140,7 +140,8 @@ workflow {
         jaxqtl_cis_nominal_grouped,
         apex_grouped
     )
-    PLOT_POWER(quasar_grouped, tensorqtl_cis_nominal)
+    
+    PLOT_POWER(quasar_grouped)
     
     PLOT_TIME(
         quasar_grouped,
@@ -510,15 +511,16 @@ process RUN_QUASAR {
 
     script:
     def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
+    def grm_flag = (model == "lmm" || model == "glmm") ? "-g ${grm}" : " "
     """
     /usr/bin/time -p -o "${chr}-${cell_type}-${model}-time.txt" \
       /home/jp2045/quasar/build/quasar \
       -p "$prefix" \
       -b "$pheno_bed" \
       -c "$covs" \
-      -g "$grm" \
+      ${grm_flag} \
       -o "${chr}-${cell_type}-${model}" \
-      -m                $model \
+      -m $model \
       --verbose
     gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
     gzip "${chr}-${cell_type}-${model}-cis-region.txt"
@@ -550,14 +552,12 @@ process PLOT_CONCORDANCE {
 process PLOT_POWER {
     publishDir "output"
 
-    input:
-        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
-        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
+    input: tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
     output: path("plot-power.pdf")
 
     script:
     """
-    plot-power.R "${quasar_pairs_list.collect()}" "${tensorqtl_pairs_list.collect()}"
+    plot-power.R "${quasar_pairs_list.collect()}"
     """
 }
 
