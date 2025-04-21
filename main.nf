@@ -10,6 +10,9 @@ params.onek1k_cell_types = [
 params.pb_types = ['mean', 'sum']
 params.quasar_spec = "data/quasar-spec.tsv"
 
+include { RUN_APEX; RUN_QUASAR; RUN_JAXQTL_CIS; RUN_JAXQTL_CIS_NOMINAL; RUN_TENSORQTL_CIS; RUN_TENSORQTL_CIS_NOMINAL } from './modules/methods'
+include { RUN_QUASAR as RUN_QUASAR_PERM } from './modules/methods'
+
 workflow {
 
     cell_types = channel.fromList(params.onek1k_cell_types)
@@ -116,6 +119,20 @@ workflow {
     
     apex = RUN_APEX(apex_input) 
 
+    // Run permutation analysis
+    rep_bed_files = bed_files
+      .filter({ it -> it[0] == "chr22"})
+      .combine(channel.of(1..20))
+
+    permute_bed_files = PERMUTE_BED(rep_bed_files)
+
+    permute_quasar_input = quasar_input
+      .filter({it[0] == "chr22"})
+      .combine(permute_bed_files, by: 0)
+      .map({ it -> [it[0], it[1], it[2], it[3], it[8], it[5], it[6], it[7]]})
+
+    quasar_perm = RUN_QUASAR_PERM(permute_quasar_input)
+
     // Reformat output.
     quasar_grouped = quasar
         .map( { it -> [it[1], it[0], it[3], it[4]]})
@@ -131,6 +148,10 @@ workflow {
 
     apex_grouped = apex
         .map({ it -> [it[1], it[0], it[3], it[4]]})
+        .groupTuple()
+
+    quasar_perm_grouped = quasar_perm
+        .map( {it -> [it[1], it[0], it[3]]})
         .groupTuple()
 
     // Make plots.
@@ -150,6 +171,8 @@ workflow {
         jaxqtl_cis_grouped,
         apex_grouped
     )
+
+    PLOT_FDR(quasar_perm_grouped)
 }
  
 // OneK1K data.
@@ -330,44 +353,6 @@ process ONEK1K_TRANSPOSE_COVS {
     """
 }
 
-process RUN_TENSORQTL_CIS {
-    conda "$projectDir/envs/tensorqtl.yaml"
-    label "tensorqtl_cis"
-
-    input:  tuple val(cell_type), val(pheno), val(covs), val(bed)
-    output: tuple val(cell_type),
-        path("onek1k-${cell_type}.cis_qtl.txt.gz"),
-        path("${cell_type}-time.txt")
-
-    script:
-    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
-    """
-    /usr/bin/time -p -o "${cell_type}-time.txt" \
-      python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
-      --covariates "$covs" \
-      --mode cis
-    """
-}
-
-process RUN_TENSORQTL_CIS_NOMINAL {
-    conda "$projectDir/envs/tensorqtl.yaml"
-    label "tensorqtl"
-
-    input: tuple val(cell_type), val(pheno), val(covs), val(bed)
-    output: tuple val(cell_type), 
-        path("onek1k-${cell_type}.cis_qtl_pairs.*.parquet"),
-        path("${cell_type}-time.txt")
-
-    script:
-    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
-    """
-    /usr/bin/time -p -o "${cell_type}-time.txt" \
-       python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
-      --covariates "$covs" \
-      --mode cis_nominal
-    """
-}
-
 process ONEK1K_MAKE_GENELIST_CHUNKS {
     input: 
         tuple val(chr), val(cell_type), val(pheno_bed)
@@ -377,64 +362,6 @@ process ONEK1K_MAKE_GENELIST_CHUNKS {
     script:
     """
     onek1k-make-genelist-chunks.R "$pheno_bed" $chr "$cell_type" $split_n
-    """
-}
-
-process RUN_JAXQTL_CIS {
-    conda "$projectDir/envs/jaxqtl.yaml"
-    label "jaxqtl"
-
-    input: tuple val(chr), val(cell_type), val(pheno), val(chunk), val(chunk_id), val(bed), val(covs), val(chr_num)
-    output: tuple val(chr), val(cell_type), 
-        path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_score.tsv.gz"),
-        path("${cell_type}-${chr}-${chunk_id}-time.txt")
-
-    script:
-    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
-    """
-    /usr/bin/time -p -o "${cell_type}-${chr}-${chunk_id}-time.txt" \
-      jaxqtl \
-      --geno "$prefix" \
-      --covar "$covs" \
-      --pheno "$pheno" \
-      --model "NB" \
-      --mode "cis" \
-      --window 500000 \
-      --genelist $chunk \
-      --test-method "score" \
-      --nperm 1000 \
-      --addpc 0 \
-      --standardize \
-      --out "jaxqtl-${cell_type}-${chr}-${chunk_id}"
-    """
-}
-
-process RUN_JAXQTL_CIS_NOMINAL {
-    conda "$projectDir/envs/jaxqtl.yaml"
-    label "jaxqtl"
-
-    input: tuple val(chr), val(cell_type), val(pheno), val(chunk), val(chunk_id), val(bed), val(covs), val(chr_num)
-    output: tuple val(chr), val(cell_type), 
-        path("jaxqtl-${cell_type}-${chr}-${chunk_id}.cis_qtl_pairs.${chr_num}.score.parquet"),
-        path("${cell_type}-${chr}-${chunk_id}-time.txt")
-
-    script:
-    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
-    """
-    /usr/bin/time -p -o "${cell_type}-${chr}-${chunk_id}-time.txt" \
-      jaxqtl \
-      --geno "$prefix" \
-      --covar "$covs" \
-      --pheno "$pheno" \
-      --model "NB" \
-      --mode "nominal" \
-      --window 500000 \
-      --genelist $chunk \
-      --test-method "score" \
-      --nperm 1000 \
-      --addpc 0 \
-      --standardize \
-      --out "jaxqtl-${cell_type}-${chr}-${chunk_id}"
     """
 }
 
@@ -450,6 +377,20 @@ process COMPRESS_AND_INDEX_BED {
     """ 
     bgzip "$bed" -o "${cell_type}-${chr}-bed.gz"
     tabix -p bed "${cell_type}-${chr}-bed.gz"
+    """
+}
+
+process PERMUTE_BED {
+
+    input: tuple val(chr), val(plink_bed), val(ind)
+    output: tuple val(chr), path("permute-${chr}.bed")
+
+    script:
+    def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
+    """
+    permute-fam.R ${prefix}.fam ${chr}
+    cp ${prefix}.bim ./"permute-${chr}.bim"
+    cp ${prefix}.bed ./"permute-${chr}.bed"
     """
 }
 
@@ -472,58 +413,6 @@ process PROCESS_APEX_COVS {
     script: 
     """
     process-apex-covariates.R "$covs" "$cell_type"
-    """
-}
-
-process RUN_APEX {
-    label "apex"
-
-    input: tuple val(chr), val(cell_type), val(pb_type), val(pheno_bed_gz), val(pheno_bed_gz_tbi), 
-        val(vcf), val(vcf_tbi), val(covs), val(sparse_grm)
-    output: tuple val(chr), val(cell_type), 
-        path("apex-${cell_type}-${chr}.cis_gene_table.txt.gz"),
-        path("apex-${cell_type}-${chr}.cis_long_table.txt.gz"),
-        path("${cell_type}-${chr}-time.txt")        
-
-    script: 
-    """
-    /usr/bin/time -p -o "${cell_type}-${chr}-time.txt" \
-        /home/jp2045/quasar-paper/apex/bin/apex cis \
-        --vcf "$vcf" \
-        --bed "$pheno_bed_gz" \
-        --cov "$covs" \
-        --grm "$sparse_grm" \
-        --prefix "apex-${cell_type}-${chr}" \
-        --rankNormal \
-        --long
-    """
-}
-
-process RUN_QUASAR {
-    label "quasar"
-
-    input: tuple val(chr), val(cell_type), val(pb_type), val(pheno_bed), 
-        val(plink_bed), val(covs), val(grm), val(model)
-    output: tuple val(chr), val(cell_type),
-        path("${chr}-${cell_type}-${model}-cis-region.txt.gz"), 
-        path("${chr}-${cell_type}-${model}-cis-variant.txt.gz"),
-        path("${chr}-${cell_type}-${model}-time.txt")
-
-    script:
-    def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
-    def grm_flag = (model == "lmm" || model == "glmm") ? "-g ${grm}" : " "
-    """
-    /usr/bin/time -p -o "${chr}-${cell_type}-${model}-time.txt" \
-      /home/jp2045/quasar/build/quasar \
-      -p "$prefix" \
-      -b "$pheno_bed" \
-      -c "$covs" \
-      ${grm_flag} \
-      -o "${chr}-${cell_type}-${model}" \
-      -m $model \
-      --verbose
-    gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
-    gzip "${chr}-${cell_type}-${model}-cis-region.txt"
     """
 }
 
@@ -583,3 +472,14 @@ process PLOT_TIME {
     """
 }
 
+process PLOT_FDR {
+    publishDir "output"
+
+    input: tuple val(cell_type), val(chrs), val(quasar_pairs_list)
+    output: path("plot-fdr.pdf")
+
+    script:
+    """
+    plot-fdr.R "${quasar_pairs_list.collect()}"
+    """
+}
