@@ -12,6 +12,8 @@ process RUN_QUASAR {
     script:
     def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
     def grm_flag = (model == "lmm" || model == "glmm") ? "-g ${grm}" : " "
+    def apl_flag = (model == "glm-apl") ? "--use-apl" : " "
+    def passed_model = (model == "glm-apl") ? "glm" : model
     """
     /usr/bin/time -p -o "${chr}-${cell_type}-${model}-time.txt" \
       /home/jp2045/quasar/build/quasar \
@@ -20,7 +22,8 @@ process RUN_QUASAR {
       -c "$covs" \
       ${grm_flag} \
       -o "${chr}-${cell_type}-${model}" \
-      -m                          $model \
+      -m $passed_model \
+      ${apl_flag} \
       --verbose
     gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
     gzip "${chr}-${cell_type}-${model}-cis-region.txt"
