@@ -90,7 +90,7 @@ for (i in seq_len(nrow(lm_qtl_data))) {
 quasar_data <- old_quasar_data
 glm_qtl_data <- left_join(
   quasar_data |>
-    filter(model == "glm"),
+    filter(model == "nb_glm"),
   jaxqtl_data,
   by = "chr"
 )

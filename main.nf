@@ -59,7 +59,7 @@ workflow {
       .combine(grm)
       .combine(quasar_spec, by: [0, 1, 2])
       .filter( { it -> it[1] == "B IN" })
-      .filter( { it -> it[7] != "glmm" } )
+      .filter( { it -> it[7] != "p_glmm" } )
 
     quasar = RUN_QUASAR(quasar_input)
 
@@ -494,7 +494,7 @@ process PLOT_FDR {
     input:
       tuple val(cell_type), val(chrs), val(quasar_pairs_list)
       tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list)
-    output: path("plot-fdr.pdf")
+    output: tuple path("plot-quasar-fdr.pdf"), path("plot-jaxqtl-fdr.pdf")
 
     script:
     """

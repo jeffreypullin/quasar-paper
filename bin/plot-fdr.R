@@ -38,7 +38,7 @@ p <- plot_data |>
   ggplot(aes(pvalue)) +
   geom_histogram()
 
-ggsave("plot-fdr.pdf", p)
+ggsave("plot-jaxqtl-fdr.pdf", p)
 
 plot_data <- quasar_data |>
   mutate(ind = seq_len(n()), .by = method) |>
@@ -52,4 +52,4 @@ p <- plot_data |>
   geom_histogram() +
   facet_wrap(~method)
 
-
+ggsave("plot-quasar-fdr.pdf", p)
