@@ -12,6 +12,7 @@ params.quasar_spec = "data/quasar-spec.tsv"
 
 include { RUN_APEX; RUN_QUASAR; RUN_JAXQTL_CIS; RUN_JAXQTL_CIS_NOMINAL; RUN_TENSORQTL_CIS; RUN_TENSORQTL_CIS_NOMINAL } from './modules/methods'
 include { RUN_QUASAR as RUN_QUASAR_PERM } from './modules/methods'
+include { RUN_JAXQTL_CIS_NOMINAL as RUN_JAXQTL_CIS_NOMINAL_PERM} from './modules/methods'
 
 workflow {
 
@@ -122,7 +123,7 @@ workflow {
     // Run permutation analysis
     rep_bed_files = bed_files
       .filter({ it -> it[0] == "chr22"})
-      .combine(channel.of(1..20))
+      .combine(channel.of(1..10))
 
     permute_bed_files = PERMUTE_BED(rep_bed_files)
 
@@ -132,6 +133,13 @@ workflow {
       .map({ it -> [it[0], it[1], it[2], it[3], it[8], it[5], it[6], it[7]]})
 
     quasar_perm = RUN_QUASAR_PERM(permute_quasar_input)
+
+    permute_jaxqtl_input = jaxqtl_input
+      .filter({it[0] == "chr22"})
+      .combine(permute_bed_files, by: 0)
+      .map({ it -> [it[0], it[1], it[2], it[3], it[4], it[8], it[6], it[7]]})
+
+     jaxqtl_cis_nominal_perm = RUN_JAXQTL_CIS_NOMINAL_PERM(permute_jaxqtl_input)
 
     // Reformat output.
     quasar_grouped = quasar
@@ -154,6 +162,10 @@ workflow {
         .map( {it -> [it[1], it[0], it[3]]})
         .groupTuple()
 
+    jaxqtl_cis_nominal_perm_grouped = jaxqtl_cis_nominal_perm
+        .map( {it -> [it[1], it[0], it[2]]})
+        .groupTuple()
+
     // Make plots.
     PLOT_CONCORDANCE(
         quasar_grouped, 
@@ -172,7 +184,11 @@ workflow {
         apex_grouped
     )
 
-    PLOT_FDR(quasar_perm_grouped)
+    PLOT_FDR(
+        quasar_perm_grouped,
+        jaxqtl_cis_nominal_perm_grouped
+    )
+
 }
  
 // OneK1K data.
@@ -475,11 +491,13 @@ process PLOT_TIME {
 process PLOT_FDR {
     publishDir "output"
 
-    input: tuple val(cell_type), val(chrs), val(quasar_pairs_list)
+    input:
+      tuple val(cell_type), val(chrs), val(quasar_pairs_list)
+      tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list)
     output: path("plot-fdr.pdf")
 
     script:
     """
-    plot-fdr.R "${quasar_pairs_list.collect()}"
+    plot-fdr.R "${quasar_pairs_list.collect()}" "${jaxqtl_pairs_list.collect()}"
     """
 }

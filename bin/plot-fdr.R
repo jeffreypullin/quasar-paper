@@ -23,6 +23,23 @@ quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   mutate(method = paste0("quasar-", model)) |>
   select(-model)
 
+jaxqtl_data <- tibble(jaxqtl_file = to_r_vec(args[2])) |>
+  mutate(chr = str_extract(jaxqtl_file, "chr[0-9]+")) |>
+  summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr")
+
+plot_data <- jaxqtl_data |>
+  unnest(cols = jaxqtl_file) |>
+  rowwise() |>
+  mutate(pvalue = list(read_parquet(jaxqtl_file)$pval_nominal)) |>
+  ungroup() |>
+  unnest(cols = pvalue)
+
+p <- plot_data |>
+  ggplot(aes(pvalue)) +
+  geom_histogram()
+
+ggsave("plot-fdr.pdf", p)
+
 plot_data <- quasar_data |>
   mutate(ind = seq_len(n()), .by = method) |>
   rowwise() |>
@@ -30,12 +47,9 @@ plot_data <- quasar_data |>
   ungroup() |>
   unnest(cols = pvalue)
 
-print(plot_data)
-
 p <- plot_data |>
   ggplot(aes(pvalue)) +
   geom_histogram() +
   facet_wrap(~method)
 
-ggsave("plot-fdr.pdf", p)
 
