@@ -25,20 +25,43 @@ quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
 
 jaxqtl_data <- tibble(jaxqtl_file = to_r_vec(args[2])) |>
   mutate(chr = str_extract(jaxqtl_file, "chr[0-9]+")) |>
-  summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr")
+  summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr") |>
+  mutate(cell_type = "B IN") |>
+  mutate(method = "jaxqtl")
 
-plot_data <- jaxqtl_data |>
+tensorqtl_data <- tibble(tensorqtl_file = to_r_vec(args[3])) |>
+  mutate(cell_type = "B IN") |>
+  mutate(method = "tensorqtl")
+
+jaxqtl_plot_data <- jaxqtl_data |>
   unnest(cols = jaxqtl_file) |>
   rowwise() |>
-  mutate(pvalue = list(read_parquet(jaxqtl_file)$pval_nominal)) |>
+  mutate(pvalue = list(read_parquet(jaxqtl_file) |> 
+    filter(converged > 0) |>
+    pull(pval_nominal))
+  ) |>
   ungroup() |>
   unnest(cols = pvalue)
 
-p <- plot_data |>
-  ggplot(aes(pvalue)) +
-  geom_histogram()
+tensorqtl_plot_data <- tensorqtl_data |>
+  rowwise() |>
+  mutate(pvalue = list(read_parquet(tensorqtl_file)$pval_nominal)) |>
+  ungroup() |>
+  unnest(cols = pvalue)
 
-ggsave("plot-jaxqtl-fdr.pdf", p)
+other_plot_data <- bind_rows(
+  jaxqtl_plot_data |>
+    select(method, pvalue),
+  tensorqtl_plot_data |>
+    select(method, pvalue)
+)
+
+p <- other_plot_data |>
+  ggplot(aes(pvalue)) +
+  geom_histogram() +
+  facet_wrap(~method)
+
+ggsave("plot-other-fdr.pdf", p)
 
 plot_data <- quasar_data |>
   mutate(ind = seq_len(n()), .by = method) |>

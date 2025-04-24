@@ -95,7 +95,9 @@ glm_qtl_data <- left_join(
   by = "chr"
 )
 
-for (i in seq_len(nrow(lm_qtl_data))) {
+pvalue_beta_vec <- numeric(0)
+gene_vec <- character(0)
+for (i in seq_len(nrow(glm_qtl_data))) {
 
   quasar_data <- read_tsv(
     glm_qtl_data$quasar_file[[i]],
@@ -106,35 +108,62 @@ for (i in seq_len(nrow(lm_qtl_data))) {
     lapply(glm_qtl_data$jaxqtl_file[[i]], read_parquet)
   )
 
-  first_feature <- quasar_data$feature_id[[1]]
+  features <- unique(quasar_data$feature_id)
+  for (j in seq_along(features)) {
 
-  quasar_filtered <- quasar_data |>
-    filter(feature_id == first_feature) |>
-    mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
+    feature <- features[[j]]
 
-  jaxqtl_filtered <- jaxqtl_data |>
-    filter(phenotype_id == first_feature)
+    quasar_filtered <- quasar_data |>
+      filter(feature_id == feature) |>
+      mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
 
-  plot_data <- quasar_filtered |>
-    left_join(jaxqtl_filtered, by = join_by(variant_id == snp))
+    jaxqtl_filtered <- jaxqtl_data |>
+      filter(phenotype_id == feature)
 
-  p1 <- plot_data |>
-    ggplot(aes(x = beta, y = slope)) +
-    geom_point() +
-    geom_abline()
-  p2 <- plot_data |>
-    ggplot(aes(x = se, y = slope_se)) +
-    geom_point() +
-    geom_abline()
-  p3 <- plot_data |>
-    ggplot(aes(x = -log10(pvalue), y = -log10(pval_nominal))) +
-    geom_point() +
-    geom_abline()
+    if (nrow(jaxqtl_filtered) == 0 || nrow(quasar_filtered) == 0) {
+      next
+    }
 
-  p <- p1 + p2 + p3
-  ggsave("plot-glm-concordance.pdf", p)
-  break
+    data <- quasar_filtered |>
+      left_join(jaxqtl_filtered, by = join_by(variant_id == snp)) |>
+      mutate(
+        log_pvalue = -log10(pvalue),
+        log_pval_nominal = -log10(pval_nominal)
+      )
+
+    lm_fit <- lm(log_pvalue ~ log_pval_nominal, data = data)
+    print(lm_fit)
+    pvalue_beta_vec <- c(pvalue_beta_vec, coef(lm_fit)[[2]])
+    gene_vec <- c(gene_vec, data$feature_id[[1]])
+
+  #p1 <- plot_data |>
+  #  ggplot(aes(x = beta, y = slope)) +
+  #  geom_point() +
+  #  geom_abline()
+  #p2 <- plot_data |>
+  #  ggplot(aes(x = se, y = slope_se)) +
+  #geom_point() +
+  #  geom_abline()
+  #p3 <- plot_data |>
+  #  ggplot(aes(x = -log10(pvalue), y = -log10(pval_nominal))) +
+  #  geom_point() +
+  #  geom_abline()
+  }
 }
+
+plot_data <- tibble(
+  pvalue_beta = pvalue_beta_vec,
+  gene = gene_vec
+)
+
+p <- plot_data |>
+  filter(!is.na(pvalue_beta)) |>
+  filter(pvalue_beta > 0) |>
+  ggplot(aes(pvalue_beta)) +
+  geom_histogram(binwidth = 0.05) +
+  coord_cartesian(xlim = c(0.5, 1.5))
+
+ggsave("plot-glm-concordance.pdf", p)
 
 # Comparison of linear mixed model methods.
 quasar_data <- old_quasar_data

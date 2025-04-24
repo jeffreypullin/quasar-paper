@@ -13,6 +13,7 @@ params.quasar_spec = "data/quasar-spec.tsv"
 include { RUN_APEX; RUN_QUASAR; RUN_JAXQTL_CIS; RUN_JAXQTL_CIS_NOMINAL; RUN_TENSORQTL_CIS; RUN_TENSORQTL_CIS_NOMINAL } from './modules/methods'
 include { RUN_QUASAR as RUN_QUASAR_PERM } from './modules/methods'
 include { RUN_JAXQTL_CIS_NOMINAL as RUN_JAXQTL_CIS_NOMINAL_PERM} from './modules/methods'
+include { RUN_TENSORQTL_CIS_NOMINAL as RUN_TENSORQTL_CIS_NOMINAL_PERM} from './modules/methods'
 
 workflow {
 
@@ -139,8 +140,14 @@ workflow {
       .combine(permute_bed_files, by: 0)
       .map({ it -> [it[0], it[1], it[2], it[3], it[4], it[8], it[6], it[7]]})
 
-     jaxqtl_cis_nominal_perm = RUN_JAXQTL_CIS_NOMINAL_PERM(permute_jaxqtl_input)
+    jaxqtl_cis_nominal_perm = RUN_JAXQTL_CIS_NOMINAL_PERM(permute_jaxqtl_input)
 
+    permute_tensorqtl_input = tensorqtl_input
+      .combine(permute_bed_files)
+      .map({ it -> [it[0], it[1], it[2], it[5]]})
+
+    tensorqtl_cis_nominal_perm = RUN_TENSORQTL_CIS_NOMINAL_PERM(permute_tensorqtl_input)
+    
     // Reformat output.
     quasar_grouped = quasar
         .map( { it -> [it[1], it[0], it[3], it[4]]})
@@ -166,6 +173,10 @@ workflow {
         .map( {it -> [it[1], it[0], it[2]]})
         .groupTuple()
 
+    tensorqtl_cis_nominal_perm_grouped = tensorqtl_cis_nominal_perm
+        .map( {it -> [it[0], it[1]]})
+        .groupTuple()
+
     // Make plots.
     PLOT_CONCORDANCE(
         quasar_grouped, 
@@ -174,7 +185,12 @@ workflow {
         apex_grouped
     )
     
-    PLOT_POWER(quasar_grouped)
+    PLOT_POWER(
+        quasar_grouped,
+        tensorqtl_cis_nominal,
+        jaxqtl_cis_nominal_grouped,
+        apex_grouped
+    )     
     
     PLOT_TIME(
         quasar_grouped,
@@ -186,7 +202,8 @@ workflow {
 
     PLOT_FDR(
         quasar_perm_grouped,
-        jaxqtl_cis_nominal_perm_grouped
+        jaxqtl_cis_nominal_perm_grouped,
+        tensorqtl_cis_nominal_perm_grouped
     )
 
 }
@@ -457,12 +474,20 @@ process PLOT_CONCORDANCE {
 process PLOT_POWER {
     publishDir "output"
 
-    input: tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
+    input: 
+        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
+        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
+        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+        tuple val(cell_type), val(chrs), val(apex_pairs_list), val(apex_time)
     output: path("plot-power.pdf")
 
     script:
     """
-    plot-power.R "${quasar_pairs_list.collect()}"
+    plot-power.R \
+        "${quasar_pairs_list.collect()}" \
+        "${tensorqtl_pairs_list.collect()}" \
+        "${jaxqtl_pairs_list.collect()}" \
+        "${apex_pairs_list.collect()}"
     """
 }
 
@@ -494,10 +519,14 @@ process PLOT_FDR {
     input:
       tuple val(cell_type), val(chrs), val(quasar_pairs_list)
       tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list)
-    output: tuple path("plot-quasar-fdr.pdf"), path("plot-jaxqtl-fdr.pdf")
+      tuple val(cell_type), val(tensorqtl_pairs_list)
+    output: tuple path("plot-quasar-fdr.pdf"), path("plot-other-fdr.pdf")
 
     script:
     """
-    plot-fdr.R "${quasar_pairs_list.collect()}" "${jaxqtl_pairs_list.collect()}"
+    plot-fdr.R \
+        "${quasar_pairs_list.collect()}" \
+        "${jaxqtl_pairs_list.collect()}" \
+        "${tensorqtl_pairs_list.collect()}"
     """
 }

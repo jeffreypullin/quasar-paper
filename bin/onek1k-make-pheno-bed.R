@@ -22,6 +22,12 @@ pheno_bed <- inner_join(feat_anno, pheno, by = "feature_id") |>
   relocate(phenotype_id, .after = end) |>
   arrange(`#chr`, start)
 
+mat <- as.matrix(pheno_bed[, 5:ncol(pheno_bed)])
+ind <- which(rowSums(mat) == 0)
+if (length(ind) > 0) {
+  pheno_bed <- slice(pheno_bed, -ind)
+}
+
 write_tsv(
   pheno_bed,
   paste0("onek1k-", cell_type, "-pheno-", pb_type, ".bed")

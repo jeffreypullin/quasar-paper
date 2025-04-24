@@ -11,7 +11,7 @@ process RUN_QUASAR {
 
     script:
     def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
-    def grm_flag = (model == "lmm" || model == "glmm") ? "-g ${grm}" : " "
+    def grm_flag = (model == "lmm" || model == "p_glmm") ? "-g ${grm}" : " "
     def apl_flag = (model == "nb_glm-apl") ? "--use-apl" : " "
     def passed_model = (model == "nb_glm-apl") ? "nb_glm" : model
     """
