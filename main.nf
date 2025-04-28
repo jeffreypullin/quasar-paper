@@ -60,7 +60,6 @@ workflow {
       .combine(grm)
       .combine(quasar_spec, by: [0, 1, 2])
       .filter( { it -> it[1] == "B IN" })
-      .filter( { it -> it[7] != "p_glmm" } )
 
     quasar = RUN_QUASAR(quasar_input)
 
