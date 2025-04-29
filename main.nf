@@ -75,7 +75,7 @@ workflow {
       .combine(all_bed)
       .filter( { it -> it[0] == "B IN"})
 
-    //tensorqtl_cis = RUN_TENSORQTL_CIS(tensorqtl_input)
+    tensorqtl_cis = RUN_TENSORQTL_CIS(tensorqtl_input)
     tensorqtl_cis_nominal = RUN_TENSORQTL_CIS_NOMINAL(tensorqtl_input)
     
     // Run jaxQTL.
@@ -194,6 +194,7 @@ workflow {
     PLOT_TIME(
         quasar_grouped,
         tensorqtl_cis_nominal,
+        tensorqtl_cis,
         jaxqtl_cis_nominal_grouped,
         jaxqtl_cis_grouped,
         apex_grouped
@@ -495,7 +496,8 @@ process PLOT_TIME {
 
     input:
         tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
-        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
+        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
+        tuple val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
         tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
         tuple val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
         tuple val(cell_type), val(chrs), val(apex_pairs_list), val(apex_time)
@@ -505,7 +507,8 @@ process PLOT_TIME {
     """
     plot-time.R \
         "${quasar_time.collect()}" \
-        "${tensorqtl_time}" \
+        "${tensorqtl_cis_nominal_time}" \
+        "${tensorqtl_cis_time}" \
         "${jaxqtl_cis_nominal_time.collect()}" \
         "${jaxqtl_cis_time.collect()}" \
         "${apex_time.collect()}"

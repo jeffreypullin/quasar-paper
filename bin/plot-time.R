@@ -35,15 +35,23 @@ quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   mutate(method = paste0("quasar-", model), type = "both") |>
   select(-model)
 
-tensorqtl_data <- tibble(tensorqtl_file = args[2]) |>
+tensorqtl_cis_nominal_data <- tibble(tensorqtl_file = args[2]) |>
   rowwise() |>
   mutate(time = read_time(tensorqtl_file)) |>
   ungroup() |>
   mutate(cell_type = "B IN") |>
   summarise(time = sum(time), .by = cell_type) |>
-  mutate(method = "tensorqtl", type = "both")
+  mutate(method = "tensorqtl", type = "cis_nominal")
 
-jaxqtl_cis_nominal_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
+tensorqtl_cis_data <- tibble(tensorqtl_file = args[3]) |>
+  rowwise() |>
+  mutate(time = read_time(tensorqtl_file)) |>
+  ungroup() |>
+  mutate(cell_type = "B IN") |>
+  summarise(time = sum(time), .by = cell_type) |>
+  mutate(method = "tensorqtl", type = "cis")
+
+jaxqtl_cis_nominal_data <- tibble(jaxqtl_file = to_r_vec(args[4])) |>
   mutate(chr = str_extract(jaxqtl_file, "chr[0-9]+")) |>
   summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr") |>
   rowwise() |>
@@ -53,7 +61,7 @@ jaxqtl_cis_nominal_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
   summarise(time = sum(time), .by = cell_type) |>
   mutate(method = "jaxqtl", type = "cis_nominal")
 
-jaxqtl_cis_data <- tibble(jaxqtl_file = to_r_vec(args[4])) |>
+jaxqtl_cis_data <- tibble(jaxqtl_file = to_r_vec(args[5])) |>
   mutate(chr = str_extract(jaxqtl_file, "chr[0-9]+")) |>
   summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr") |>
   rowwise() |>
@@ -63,7 +71,7 @@ jaxqtl_cis_data <- tibble(jaxqtl_file = to_r_vec(args[4])) |>
   summarise(time = sum(time), .by = cell_type) |>
   mutate(method = "jaxqtl", type = "cis")
 
-apex_data <- tibble(apex_file = to_r_vec(args[5])) |>
+apex_data <- tibble(apex_file = to_r_vec(args[6])) |>
   mutate(chr = str_extract(apex_file, "chr[0-9]+(?=\\-time)")) |>
   rowwise() |>
   mutate(time = read_time(apex_file)) |>
@@ -77,7 +85,8 @@ plot_data <- bind_rows(
   quasar_data,
   jaxqtl_cis_data,
   jaxqtl_cis_nominal_data,
-  tensorqtl_data
+  tensorqtl_cis_data,
+  tensorqtl_cis_nominal_data
 )
 
 time_plot <- plot_data |>
