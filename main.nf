@@ -59,7 +59,9 @@ workflow {
       .combine(chrs.combine(covs), by: [0, 1])
       .combine(grm)
       .combine(quasar_spec, by: [0, 1, 2])
-      .filter( { it -> it[1] == "B IN" })
+      .filter( { it -> it[1] == "B IN" || it[1] == "Plasma" || it[1] == "CD4 NC"})
+      .filter( { it -> it[7] != "nb_glmm"})
+      .filter( { it -> it[7] != "nb_glmm-apl"})
 
     quasar = RUN_QUASAR(quasar_input)
 
@@ -73,7 +75,7 @@ workflow {
     tensorqtl_input = norm_pheno_bed
       .join(t_covs)
       .combine(all_bed)
-      .filter( { it -> it[0] == "B IN"})
+      .filter( { it -> it[0] == "B IN" || it[0] == "Plasma" || it[0] == "CD4 NC"})
 
     tensorqtl_cis = RUN_TENSORQTL_CIS(tensorqtl_input)
     tensorqtl_cis_nominal = RUN_TENSORQTL_CIS_NOMINAL(tensorqtl_input)
@@ -98,7 +100,7 @@ workflow {
         .combine(split_chunks, by: [0, 1])
         .combine(bed_files, by: 0)
         .combine(chrs.combine(jaxqtl_covs), by: [0, 1])
-        .filter( { it -> it[1] == "B IN"})
+        .filter( { it -> it[1] == "B IN" || it[1] == "Plasma" || it[1] == "CD4 NC"})
         .map( { it -> [it, it[0].substring(3).toInteger()].flatten()})
 
     jaxqtl_cis = RUN_JAXQTL_CIS(jaxqtl_input)
@@ -116,7 +118,7 @@ workflow {
         .combine(filt_vcf_files, by: 0)
         .combine(chrs.combine(apex_covs), by: [0, 1])
         .combine(sparse_grm)
-        .filter( { it -> it[1] == "B IN"})
+        .filter( { it -> it[1] == "B IN" || it[1] == "Plasma" || it[1] == "CD4 NC"})
     
     apex = RUN_APEX(apex_input) 
 
@@ -128,7 +130,7 @@ workflow {
     permute_bed_files = PERMUTE_BED(rep_bed_files)
 
     permute_quasar_input = quasar_input
-      .filter({it[0] == "chr22"})
+      .filter( {it -> it[0] == "chr22" })
       .combine(permute_bed_files, by: 0)
       .map({ it -> [it[0], it[1], it[2], it[3], it[8], it[5], it[6], it[7]]})
 
@@ -148,22 +150,34 @@ workflow {
     tensorqtl_cis_nominal_perm = RUN_TENSORQTL_CIS_NOMINAL_PERM(permute_tensorqtl_input)
     
     // Reformat output.
-    quasar_grouped = quasar
-        .map( { it -> [it[1], it[0], it[3], it[4]]})
+    ind_channel = channel.of(1)
+
+    quasar_grouped = ind_channel
+        .combine(quasar)
         .groupTuple()
 
-    jaxqtl_cis_nominal_grouped = jaxqtl_cis_nominal
-        .map( { it -> [it[1], it[0], it[2], it[3]]})
+    jaxqtl_cis_nominal_grouped = ind_channel
+        .combine(jaxqtl_cis_nominal)
         .groupTuple() 
     
-    jaxqtl_cis_grouped = jaxqtl_cis
-        .map( { it -> [it[1], it[0], it[2], it[3]]})
+    jaxqtl_cis_grouped = ind_channel
+        .combine(jaxqtl_cis)
         .groupTuple() 
 
-    apex_grouped = apex
-        .map({ it -> [it[1], it[0], it[3], it[4]]})
+    apex_grouped = ind_channel
+        .combine(apex)
         .groupTuple()
 
+    tensorqtl_cis_nominal_grouped = ind_channel
+        .combine(tensorqtl_cis_nominal)
+        .groupTuple()
+        .map( { it -> [it[0], it[1], it[2].flatten(), it[3]]})
+    
+    tensorqtl_cis_grouped = ind_channel
+        .combine(tensorqtl_cis)
+        .groupTuple()
+
+    // Permuation data.
     quasar_perm_grouped = quasar_perm
         .map( {it -> [it[1], it[0], it[3]]})
         .groupTuple()
@@ -177,34 +191,34 @@ workflow {
         .groupTuple()
 
     // Make plots.
-    PLOT_CONCORDANCE(
-        quasar_grouped, 
-        tensorqtl_cis_nominal,
-        jaxqtl_cis_nominal_grouped,
-        apex_grouped
-    )
+    //PLOT_CONCORDANCE(
+    //    quasar_grouped, 
+    //    tensorqtl_cis_nominal_grouped,
+    //    jaxqtl_cis_nominal_grouped,
+    //    apex_grouped
+    //)
     
     PLOT_POWER(
         quasar_grouped,
-        tensorqtl_cis_nominal,
+        tensorqtl_cis_nominal_grouped,
         jaxqtl_cis_nominal_grouped,
         apex_grouped
     )     
     
     PLOT_TIME(
-        quasar_grouped,
-        tensorqtl_cis_nominal,
-        tensorqtl_cis,
+       quasar_grouped,
+        tensorqtl_cis_nominal_grouped,
+        tensorqtl_cis_grouped,
         jaxqtl_cis_nominal_grouped,
         jaxqtl_cis_grouped,
         apex_grouped
     )
 
-    PLOT_FDR(
-        quasar_perm_grouped,
-        jaxqtl_cis_nominal_perm_grouped,
-        tensorqtl_cis_nominal_perm_grouped
-    )
+    //PLOT_FDR(
+    //    quasar_perm_grouped,
+    //    jaxqtl_cis_nominal_perm_grouped,
+    //    tensorqtl_cis_nominal_perm_grouped
+    //)
 
 }
  
@@ -475,10 +489,10 @@ process PLOT_POWER {
     publishDir "output"
 
     input: 
-        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
-        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
-        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
-        tuple val(cell_type), val(chrs), val(apex_pairs_list), val(apex_time)
+        tuple val(ind), val(cell_type), val(chrs), val(quasar_region), val(quasar_pairs_list), val(quasar_time)
+        tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
+        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+        tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
     output: path("plot-power.pdf")
 
     script:
@@ -495,20 +509,20 @@ process PLOT_TIME {
     publishDir "output"
 
     input:
-        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
-        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
-        tuple val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
-        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
-        tuple val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
-        tuple val(cell_type), val(chrs), val(apex_pairs_list), val(apex_time)
+        tuple val(ind), val(cell_type), val(chrs), val(quasar_region), val(quasar_pairs_list), val(quasar_time)
+        tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
+        tuple val(ind), val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
+        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
+        tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
     output: path("plot-time.pdf")
 
     script:
     """
     plot-time.R \
         "${quasar_time.collect()}" \
-        "${tensorqtl_cis_nominal_time}" \
-        "${tensorqtl_cis_time}" \
+        "${tensorqtl_cis_nominal_time.collect()}" \
+        "${tensorqtl_cis_time.collect()}" \
         "${jaxqtl_cis_nominal_time.collect()}" \
         "${jaxqtl_cis_time.collect()}" \
         "${apex_time.collect()}"

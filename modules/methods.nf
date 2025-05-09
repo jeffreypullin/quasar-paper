@@ -11,9 +11,9 @@ process RUN_QUASAR {
 
     script:
     def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
-    def grm_flag = (model == "lmm" || model == "p_glmm") ? "-g ${grm}" : " "
-    def apl_flag = (model == "nb_glm-apl") ? "--use-apl" : " "
-    def passed_model = (model == "nb_glm-apl") ? "nb_glm" : model
+    def grm_flag = (model.contains("lmm")) ? "-g ${grm}" : " "
+    def apl_flag = (model.endsWith("-apl")) ? "--use-apl" : " "
+    def passed_model = (model.endsWith("-apl")) ? model.split("-")[0] : model
     """
     /usr/bin/time -p -o "${chr}-${cell_type}-${model}-time.txt" \
       /home/jp2045/quasar/build/quasar \
