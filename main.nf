@@ -14,6 +14,7 @@ include { RUN_APEX; RUN_QUASAR; RUN_JAXQTL_CIS; RUN_JAXQTL_CIS_NOMINAL; RUN_TENS
 include { RUN_QUASAR as RUN_QUASAR_PERM } from './modules/methods'
 include { RUN_JAXQTL_CIS_NOMINAL as RUN_JAXQTL_CIS_NOMINAL_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS_NOMINAL as RUN_TENSORQTL_CIS_NOMINAL_PERM} from './modules/methods'
+include { RUN_APEX as RUN_APEX_PERM} from './modules/methods'
 
 workflow {
 
@@ -129,6 +130,12 @@ workflow {
 
     permute_bed_files = PERMUTE_BED(rep_bed_files)
 
+    rep_vcf_files = filt_vcf_files
+      .filter({ it -> it[0] == "chr22"})
+      .combine(channel.of(1..10))
+
+    permute_vcf_files = PERMUTE_VCF(rep_vcf_files)
+    
     permute_quasar_input = quasar_input
       .filter( {it -> it[0] == "chr22" })
       .combine(permute_bed_files, by: 0)
@@ -148,7 +155,14 @@ workflow {
       .map({ it -> [it[0], it[1], it[2], it[5]]})
 
     tensorqtl_cis_nominal_perm = RUN_TENSORQTL_CIS_NOMINAL_PERM(permute_tensorqtl_input)
+
+    permute_apex_input = apex_input
+      .filter( { it -> it[0] == "chr22"})
+      .combine(permute_vcf_files)
+      .map( {it -> [it[0], it[1], it[2], it[3], it[4], it[10], it[11], it[7], it[8]]})
     
+    apex_perm = RUN_APEX_PERM(permute_apex_input)
+
     // Reformat output.
     ind_channel = channel.of(1)
 
@@ -177,17 +191,22 @@ workflow {
         .combine(tensorqtl_cis)
         .groupTuple()
 
-    // Permuation data.
-    quasar_perm_grouped = quasar_perm
-        .map( {it -> [it[1], it[0], it[3]]})
+    // Permutation data.
+    quasar_perm_grouped = ind_channel
+        .combine(quasar_perm)
         .groupTuple()
 
-    jaxqtl_cis_nominal_perm_grouped = jaxqtl_cis_nominal_perm
-        .map( {it -> [it[1], it[0], it[2]]})
+    jaxqtl_cis_nominal_perm_grouped = ind_channel
+        .combine(jaxqtl_cis_nominal_perm)
         .groupTuple()
 
-    tensorqtl_cis_nominal_perm_grouped = tensorqtl_cis_nominal_perm
-        .map( {it -> [it[0], it[1]]})
+    tensorqtl_cis_nominal_perm_grouped  = ind_channel
+        .combine(tensorqtl_cis_nominal_perm)
+        .groupTuple()
+        .map( { it -> [it[0], it[1], it[2].flatten(), it[3]]})
+
+    apex_perm_grouped = ind_channel
+        .combine(apex_perm)
         .groupTuple()
 
     // Make plots.
@@ -206,7 +225,7 @@ workflow {
     )     
     
     PLOT_TIME(
-       quasar_grouped,
+        quasar_grouped,
         tensorqtl_cis_nominal_grouped,
         tensorqtl_cis_grouped,
         jaxqtl_cis_nominal_grouped,
@@ -214,12 +233,12 @@ workflow {
         apex_grouped
     )
 
-    //PLOT_FDR(
-    //    quasar_perm_grouped,
-    //    jaxqtl_cis_nominal_perm_grouped,
-    //    tensorqtl_cis_nominal_perm_grouped
-    //)
-
+    PLOT_FDR(
+       quasar_perm_grouped,
+       tensorqtl_cis_nominal_perm_grouped,
+       jaxqtl_cis_nominal_perm_grouped,
+       apex_perm_grouped
+    ) 
 }
  
 // OneK1K data.
@@ -441,6 +460,21 @@ process PERMUTE_BED {
     """
 }
 
+process PERMUTE_VCF {
+    conda "$projectDir/envs/cli.yaml"
+
+    input: tuple val(chr), val(vcf), val(tbi), val(ind)
+    output: tuple val(chr), path("permute-${chr}.vcf.gz"), path("permute-${chr}.vcf.gz.tbi")
+
+    script: 
+    """
+    permute-vcf.R $vcf $chr
+    gunzip "permute-${chr}.vcf.gz"
+    bgzip "permute-${chr}.vcf"
+    tabix -p vcf "permute-${chr}.vcf.gz"
+    """
+}
+
 process TO_SPARSE_GRM_FORMAT {
 
     input: val grm
@@ -530,19 +564,22 @@ process PLOT_TIME {
 }
 
 process PLOT_FDR {
+    label "plot"
     publishDir "output"
 
     input:
-      tuple val(cell_type), val(chrs), val(quasar_pairs_list)
-      tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list)
-      tuple val(cell_type), val(tensorqtl_pairs_list)
-    output: tuple path("plot-quasar-fdr.pdf"), path("plot-other-fdr.pdf")
+       tuple val(ind), val(cell_type), val(chrs), val(quasar_region), val(quasar_pairs_list), val(quasar_time)
+       tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
+    output: path("plot-other-fdr.pdf")
 
     script:
     """
     plot-fdr.R \
         "${quasar_pairs_list.collect()}" \
+        "${tensorqtl_pairs_list.collect()}" \
         "${jaxqtl_pairs_list.collect()}" \
-        "${tensorqtl_pairs_list.collect()}"
+        "${apex_pairs_list.collect()}"
     """
 }
