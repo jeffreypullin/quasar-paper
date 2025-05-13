@@ -17,6 +17,50 @@ suppressPackageStartupMessages({
 source("/home/jp2045/quasar-paper/code/plot-utils.R")
 args <- commandArgs(trailingOnly = TRUE)
 
+quasar_gene_data <- tibble(quasar_file = to_r_vec(args[5])) |>
+  mutate(
+    chr = str_extract(quasar_file, "chr[0-9]+"),
+    cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
+  ) |>
+  filter(model == "nb_glm") |>
+  rowwise() |>
+  mutate(
+    n_sig = sum(p.adjust(read_tsv(quasar_file)$pvalue, method = "BH") < 0.01)
+  ) |>
+  ungroup() |>
+  summarise(n_sig = sum(n_sig), .by = cell_type)
+
+tensorqtl_gene_data <- tibble(tensorqtl_file = to_r_vec(args[6])) |>
+  mutate(
+    cell_type = str_extract(tensorqtl_file, "(?<=onek1k-).*?(?=\\.cis)"),
+    method = "tensorqtl"
+  ) |>
+  rowwise() |>
+  mutate(
+    n_sig = sum(p.adjust(read_tsv(tensorqtl_file)$pval_perm, method = "BH") < 0.01)
+  ) |>
+  ungroup()
+
+apex_data <- tibble(apex_file = to_r_vec(args[8])) |>
+  mutate(
+    chr = str_extract(apex_file, "chr[0-9]+(?=\\.cis)"),
+    cell_type = str_extract(apex_file, "(?<=apex-).*?(?=-chr)"),
+    method = "apex"
+  ) |>
+  rowwise() |>
+  mutate(
+    n_sig = sum(p.adjust(read_tsv(apex_file)$egene_pval, method = "BH") < 0.01)
+  ) |>
+  ungroup() |>
+  summarise(n_sig = sum(n_sig), .by = cell_type)
+
+
+print(apex_data)
+print(quasar_gene_data)
+print(tensorqtl_gene_data)
+head(read_tsv(to_r_vec(args[6])[[1]]))
+
 quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   mutate(
     chr = str_extract(quasar_file, "chr[0-9]+"),
