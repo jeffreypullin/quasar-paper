@@ -477,9 +477,9 @@ process PERMUTE_VCF {
 
     script: 
     """
-    permute-vcf.R $vcf $chr
-    gunzip "permute-${chr}.vcf.gz"
-    bgzip "permute-${chr}.vcf"
+    bcftools query -l $vcf > sample-ids.txt
+    shuf sample-ids.txt > permuted-sample-ids.txt
+    bcftools reheader -s permuted-sample-ids.txt -o "permute-${chr}.vcf.gz" $vcf
     tabix -p vcf "permute-${chr}.vcf.gz"
     """
 }
