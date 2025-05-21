@@ -156,7 +156,7 @@ workflow {
       .map({ it -> [it[0], it[1], it[2], it[5]]})
 
     tensorqtl_cis_nominal_perm = RUN_TENSORQTL_CIS_NOMINAL_PERM(permute_tensorqtl_input)
-    //tensorqtl_cis_perm = RUN_TENSORQTL_CIS_PERM(permute_tensorqtl_input)
+    tensorqtl_cis_perm = RUN_TENSORQTL_CIS_PERM(permute_tensorqtl_input)
 
     permute_apex_input = apex_input
       .filter( { it -> it[0] == "chr22"})
@@ -207,10 +207,10 @@ workflow {
         .groupTuple()
         .map( { it -> [it[0], it[1], it[2].flatten(), it[3]]})
 
-    //tensorqtl_cis_perm_grouped = ind_channel
-    //    .combine(tensorqtl_cis_perm)
-    //    .groupTuple()
-    //    .map( { it -> [it[0], it[1], it[2].flatten(), it[3]]})
+    tensorqtl_cis_perm_grouped = ind_channel
+        .combine(tensorqtl_cis_perm)
+        .groupTuple()
+        .map( { it -> [it[0], it[1], it[2].flatten(), it[3]]})
 
     apex_perm_grouped = ind_channel
         .combine(apex_perm)
@@ -245,6 +245,7 @@ workflow {
     PLOT_FDR(
        quasar_perm_grouped,
        tensorqtl_cis_nominal_perm_grouped,
+       tensorqtl_cis_perm_grouped,
        jaxqtl_cis_nominal_perm_grouped,
        apex_perm_grouped
     ) 
@@ -579,15 +580,18 @@ process PLOT_TIME {
 }
 
 process PLOT_FDR {
-    //label "plot"
     publishDir "output"
 
     input:
        tuple val(ind), val(cell_type), val(chrs), val(quasar_region_list), val(quasar_pairs_list), val(quasar_time)
        tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
        tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
-    output: path("plot-other-fdr.pdf")
+    output: tuple path("plot-quasar-variant-fdr.pdf"), 
+        path("plot-other-variant-fdr.pdf"), 
+        path("plot-quasar-gene-fdr.pdf"),
+        path("plot-other-gene-fdr.pdf")
 
     script:
     """
@@ -597,6 +601,7 @@ process PLOT_FDR {
         "${jaxqtl_pairs_list.collect()}" \
         "${apex_pairs_list.collect()}" \
         "${quasar_region_list.collect()}" \
+        "${tensorqtl_cis_list.collect()}" \
         "${apex_region_list.collect()}"
     """
 }

@@ -22,7 +22,7 @@ process RUN_QUASAR {
       -c "$covs" \
       ${grm_flag} \
       -o "${chr}-${cell_type}-${model}" \
-      -m $passed_model \
+      -m           $passed_model \
       ${apl_flag} \
       --verbose
     gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
