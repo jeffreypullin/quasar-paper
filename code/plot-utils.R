@@ -55,6 +55,7 @@ theme_jp_vgrid <- function() {
 
 method_lookup <- c(
   "tensorqtl" = "tensorQTL",
+  "tensorqtl_acat" = "tensorQTL (ACAT)",
   "apex" = "apex",
   "jaxqtl" = "jaxQTL",
   "jaxqtl_cis" = "jaxQTL (cis)",

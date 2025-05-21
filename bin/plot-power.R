@@ -11,17 +11,12 @@ suppressPackageStartupMessages({
   library(purrr)
   library(forcats)
   library(glue)
+  library(data.table)
 })
 
 # FIXME: Make this more reproducible.
 source("/home/jp2045/quasar-paper/code/plot-utils.R")
 args <- commandArgs(trailingOnly = TRUE)
-
-acat <- function(pvals) {
-  n <- length(pvals)
-  sum <- sum(qcauchy(pvals) / n) 
-  pcauchy(sum) 
-}
 
 # Variant level (cis-nomianal) data.
 
@@ -35,7 +30,7 @@ quasar_variant_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   select(-model) |>
   filter(method != "quasar-p_glm") |>
   rowwise() |>
-  mutate(n_sig = sum(read_tsv(quasar_file)$pvalue < 1e-6)) |>
+  mutate(n_sig = sum(fread(quasar_file, select = "pvalue")$pvalue < 1e-6)) |>
   ungroup()
 
 tensorqtl_variant_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
@@ -44,7 +39,7 @@ tensorqtl_variant_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
     method = "tensorqtl"
   ) |>
   rowwise() |>
-  mutate(n_sig = sum(read_parquet(tensorqtl_file)$pval_nominal < 1e-6)) |>
+  mutate(n_sig = sum(read_parquet(tensorqtl_file, col_select = "pval_nominal")$pval_nominal < 1e-6)) |>
   ungroup()
 
 jaxqtl_variant_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
@@ -57,7 +52,7 @@ jaxqtl_variant_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
   rowwise() |>
   mutate(n_sig = sum(map_dbl(
     jaxqtl_file,
-    function(x)  sum(read_parquet(x)$pval_nominal < 1e-6)))
+    function(x)  sum(read_parquet(x, col_select = "pval_nominal")$pval_nominal < 1e-6)))
   ) |>
   ungroup()
 
@@ -68,7 +63,7 @@ apex_variant_data <- tibble(apex_file = to_r_vec(args[4])) |>
     method = "apex"
   ) |>
   rowwise() |>
-  mutate(n_sig = sum(read_tsv(apex_file)$pval < 1e-6)) |>
+  mutate(n_sig = sum(fread(apex_file, select = "pval")$pval < 1e-6)) |>
   ungroup()
 
 # Gene level (cis) data.
@@ -98,6 +93,29 @@ tensorqtl_gene_data <- tibble(tensorqtl_file = to_r_vec(args[6])) |>
     n_sig = sum(p.adjust(read_tsv(tensorqtl_file)$pval_beta, method = "BH") < 0.01)
   ) |>
   ungroup()
+
+acat <- function(pvals) {
+  n <- length(pvals)
+  sum <- sum(qcauchy(pvals) / n) 
+  pcauchy(sum) 
+}
+
+tensorqtl_gene_acat_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
+  mutate(
+    cell_type = str_extract(tensorqtl_file, "(?<=onek1k-).*?(?=\\.cis)"),
+    method = "tensorqtl_acat"
+  ) |>
+  rowwise() |>
+  mutate(pvalue = list(read_parquet(tensorqtl_file) |>
+    summarise(pvalue = acat(pval_nominal), .by = phenotype_id) |>
+    pull(pvalue)
+  )) |>
+  unnest(cols = pvalue) |>
+  ungroup() |>
+  summarise(
+    n_sig = sum(p.adjust(pvalue, method = "BH") < 0.01), 
+    .by = c(method, cell_type)
+  )
 
 jaxqtl_gene_data <- tibble(jaxqtl_file = to_r_vec(args[7])) |>
   mutate(
@@ -162,6 +180,8 @@ gene_plot_data <- bind_rows(
   jaxqtl_gene_data |>
     summarise(n_sig = sum(n_sig), .by = c(method, cell_type)),
   apex_gene_data |>
+    summarise(n_sig = sum(n_sig), .by = c(method, cell_type)),
+  tensorqtl_gene_acat_data |>
     summarise(n_sig = sum(n_sig), .by = c(method, cell_type))
 ) |>
   mutate(
@@ -184,7 +204,10 @@ gene_power_plot <- gene_plot_data |>
 power_plot <- variant_power_plot + gene_power_plot + 
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "a") &
-  theme(plot.tag = element_text(size = 18))
+  theme(
+    plot.tag = element_text(size = 18),
+    legend.direction = "vertical"
+  )
 
 ggsave(
   "plot-power.pdf", 
