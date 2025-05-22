@@ -9,6 +9,12 @@ to_r_vec <- function(str) {
     out
 }
 
+acat <- function(pvals) {
+  n <- length(pvals)
+  sum <- sum(qcauchy(pvals) / n) 
+  pcauchy(sum) 
+}
+
 theme_jp <- function() {
 
   font <- "Helvetica"

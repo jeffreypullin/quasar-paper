@@ -249,6 +249,12 @@ workflow {
        jaxqtl_cis_nominal_perm_grouped,
        apex_perm_grouped
     ) 
+
+    PLOT_SUPP(
+       quasar_grouped,
+       tensorqtl_cis_nominal_perm_grouped,
+       tensorqtl_cis_perm_grouped
+    )     
 }
  
 // OneK1K data.
@@ -603,5 +609,23 @@ process PLOT_FDR {
         "${quasar_region_list.collect()}" \
         "${tensorqtl_cis_list.collect()}" \
         "${apex_region_list.collect()}"
+    """
+}
+
+process PLOT_SUPP {
+    publishDir "output"
+
+    input: 
+        tuple val(ind), val(cell_type), val(chrs), val(quasar_region), val(quasar_pairs_list), val(quasar_time)
+        tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
+        tuple val(ind), val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
+    output: tuple path("plot-phi.pdf"), path("plot-null-hist.pdf")
+
+    script:
+    """
+    plot-supp.R \
+        "${quasar_pairs_list.collect()}" \
+        "${tensorqtl_pairs_list.collect()}" \
+        "${tensorqtl_cis_list.collect()}"
     """
 }

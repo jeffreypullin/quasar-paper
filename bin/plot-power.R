@@ -94,12 +94,6 @@ tensorqtl_gene_data <- tibble(tensorqtl_file = to_r_vec(args[6])) |>
   ) |>
   ungroup()
 
-acat <- function(pvals) {
-  n <- length(pvals)
-  sum <- sum(qcauchy(pvals) / n) 
-  pcauchy(sum) 
-}
-
 tensorqtl_gene_acat_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
   mutate(
     cell_type = str_extract(tensorqtl_file, "(?<=onek1k-).*?(?=\\.cis)"),
