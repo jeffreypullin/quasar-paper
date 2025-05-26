@@ -8,6 +8,8 @@ suppressPackageStartupMessages({
   library(arrow)
   library(patchwork)
   library(tidyr)
+  library(glue)
+  library(data.table)
 })
 
 # FIXME: Make this more reproducible.
@@ -15,83 +17,94 @@ source("/home/jp2045/quasar-paper/code/plot-utils.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 
-quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
-  mutate(chr = str_extract(quasar_file, "chr[0-9]+")) |>
-  mutate(model = str_extract(quasar_file, "(?<=-)[^-]+(?=-cis)")) |>
-  relocate(chr, quasar_file)
-old_quasar_data <- quasar_data
-
-tensorqtl_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
+quasar_files_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   mutate(
-    chr = paste0("chr", str_extract(tensorqtl_file, "[0-9]+(?=\\.parquet)"))
+    chr = str_extract(quasar_file, "chr[0-9]+"),
+    cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
   ) |>
-  relocate(chr, tensorqtl_file)
+  filter(cell_type == "B IN")
 
-jaxqtl_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
-  mutate(chr = str_extract(jaxqtl_file, "chr[0-9]+")) |>
-  summarise(jaxqtl_file = list(jaxqtl_file), .by = "chr") |>
-  relocate(chr, jaxqtl_file)
-
-apex_data <- tibble(apex_file = to_r_vec(args[4])) |>
+tensorqtl_files_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
   mutate(
-    chr = str_extract(apex_file, "chr[0-9]+(?=\\.cis)")
+    chr = paste0("chr", str_extract(tensorqtl_file, "(?<=\\.)[0-9]+(?=\\.parquet)")),
+    cell_type = str_extract(tensorqtl_file, "(?<=onek1k-).*?(?=\\.cis)"),
+    method = "tensorqtl"
   ) |>
-  relocate(chr, apex_file)
+  filter(cell_type == "B IN")
+
+jaxqtl_files_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
+  mutate(
+    chr = str_extract(jaxqtl_file, "chr[0-9]+"),
+    cell_type = str_extract(jaxqtl_file, "(?<=jaxqtl-).*?(?=-chr)"),
+  ) |>
+  summarise(jaxqtl_file = list(jaxqtl_file), .by = c("chr", "cell_type")) |>
+  filter(cell_type == "B IN")
+
+apex_files_data <- tibble(apex_file = to_r_vec(args[4])) |>
+  mutate(
+    chr = str_extract(apex_file, "chr[0-9]+(?=\\.cis)"),
+    cell_type = str_extract(apex_file, "(?<=apex-).*?(?=-chr)"),
+    method = "apex"
+  ) |>
+  filter(cell_type == "B IN")
 
 # Comparison of linear model methods.
 lm_qtl_data <- left_join(
-  quasar_data |>
+  quasar_files_data |>
     filter(model == "lm"),
-  tensorqtl_data,
+  tensorqtl_files_data,
   by = "chr"
 )
 
+pvalue_beta_vec <- numeric(0)
+gene_vec <- character(0)
 for (i in seq_len(nrow(lm_qtl_data))) {
 
-  quasar_data <- read_tsv(
-    lm_qtl_data$quasar_file[[i]],
-    show_col_types = FALSE
-  )
-  tensorqtl_data <- read_parquet(
-    lm_qtl_data$tensorqtl_file[[i]]
-  )
+  quasar_data <- fread(lm_qtl_data$quasar_file[[i]]) |>
+     mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
+  tensorqtl_data <- read_parquet(lm_qtl_data$tensorqtl_file[[i]])
 
-  first_feature <- quasar_data$feature_id[[1]]
+  features <- unique(quasar_data$feature_id)
+  for (j in seq_along(features)) {
 
-  quasar_filtered <- quasar_data |>
-    filter(feature_id == first_feature) |>
-    mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
+    feature <- features[[j]]
 
-  tensorqtl_filtered <- tensorqtl_data |>
-    filter(phenotype_id == first_feature)
+    quasar_filtered <- quasar_data |>
+      filter(feature_id == feature)
 
-  plot_data <- quasar_filtered |>
-    left_join(tensorqtl_filtered, by = "variant_id")
+    tensorqtl_filtered <- tensorqtl_data |>
+      filter(phenotype_id == feature)
 
-  p1 <- plot_data |>
-    ggplot(aes(x = beta, y = slope)) +
-    geom_point() +
-    geom_abline()
-  p2 <- plot_data |>
-    ggplot(aes(x = se, y = slope_se)) +
-    geom_point() +
-    geom_abline()
-  p3 <- plot_data |>
-    ggplot(aes(x = -log10(pvalue), y = -log10(pval_nominal))) +
-    geom_point() +
-    geom_abline()
+     if (nrow(tensorqtl_filtered) == 0 || nrow(quasar_filtered) == 0) {
+      next
+    } 
 
-  p <- p1 + p2 + p3
-  ggsave("plot-lm-concordance.pdf", p)
-  break
+    fit_data <- quasar_filtered |>
+      left_join(tensorqtl_filtered, by = "variant_id") |>
+      mutate(
+        log_pvalue = -log10(pvalue),
+        log_pval_nominal = -log10(pval_nominal)
+      )
+
+      lm_fit <- lm(log_pvalue ~ log_pval_nominal, data = fit_data)
+    
+      pvalue_beta_vec <- c(pvalue_beta_vec, coef(lm_fit)[[2]])
+      gene_vec <- c(gene_vec, fit_data$feature_id[[1]])
+  }
 }
 
+lm_plot_data <- tibble(
+  pvalue_beta = pvalue_beta_vec,
+  gene = gene_vec, 
+  model = "LM"
+)
+
 # Comparison of Negative Binomial GLM model methods.
-quasar_data <- old_quasar_data
 glm_qtl_data <- left_join(
-  quasar_data |>
+  quasar_files_data |>
     filter(model == "nb_glm"),
-  jaxqtl_data,
+  jaxqtl_files_data,
   by = "chr"
 )
 
@@ -132,48 +145,27 @@ for (i in seq_len(nrow(glm_qtl_data))) {
       )
 
     lm_fit <- lm(log_pvalue ~ log_pval_nominal, data = data)
-    print(lm_fit)
     pvalue_beta_vec <- c(pvalue_beta_vec, coef(lm_fit)[[2]])
     gene_vec <- c(gene_vec, data$feature_id[[1]])
-
-  #p1 <- plot_data |>
-  #  ggplot(aes(x = beta, y = slope)) +
-  #  geom_point() +
-  #  geom_abline()
-  #p2 <- plot_data |>
-  #  ggplot(aes(x = se, y = slope_se)) +
-  #geom_point() +
-  #  geom_abline()
-  #p3 <- plot_data |>
-  #  ggplot(aes(x = -log10(pvalue), y = -log10(pval_nominal))) +
-  #  geom_point() +
-  #  geom_abline()
   }
 }
 
-plot_data <- tibble(
+glm_plot_data <- tibble(
   pvalue_beta = pvalue_beta_vec,
-  gene = gene_vec
+  gene = gene_vec,
+  model = "NB-GLM"
 )
 
-p <- plot_data |>
-  filter(!is.na(pvalue_beta)) |>
-  filter(pvalue_beta > 0) |>
-  ggplot(aes(pvalue_beta)) +
-  geom_histogram(binwidth = 0.05) +
-  coord_cartesian(xlim = c(0.5, 1.5))
-
-ggsave("plot-glm-concordance.pdf", p)
-
 # Comparison of linear mixed model methods.
-quasar_data <- old_quasar_data
 lmm_qtl_data <- left_join(
-  quasar_data |>
+  quasar_files_data |>
     filter(model == "lmm"),
-  apex_data,
+  apex_files_data,
   by = "chr"
 )
 
+pvalue_beta_vec <- numeric(0)
+gene_vec <- character(0)
 for (i in seq_len(nrow(lmm_qtl_data))) {
 
   quasar_data <- read_tsv(
@@ -185,35 +177,61 @@ for (i in seq_len(nrow(lmm_qtl_data))) {
     lmm_qtl_data$apex_file[[i]],
     show_col_types = FALSE
   )
-
-  first_feature <- quasar_data$feature_id[[1]]
-
-  quasar_filtered <- quasar_data |>
-    filter(feature_id == first_feature) |>
-    mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
   
-  apex_filtered <- apex_data |>
-    filter(gene == first_feature) |>
-    mutate(apex_variant_id = paste0(`#chrom`, ":", pos, ref, "-", alt)) |>
-    rename(apex_beta = beta, apex_se = se, apex_pval = pval)
-  
-  plot_data <- quasar_filtered |>
-    left_join(apex_filtered, by = join_by(variant_id == apex_variant_id))
-  
-  p1 <- plot_data |>
-    ggplot(aes(x = beta, y = apex_beta)) +
-    geom_point() +
-    geom_abline()
-  p2 <- plot_data |>
-    ggplot(aes(x = se, y = apex_se)) +
-    geom_point() +
-    geom_abline()
-  p3 <- plot_data |>
-    ggplot(aes(x = -log10(pvalue), y = -log10(apex_pval))) +
-    geom_point() +
-    geom_abline()
+  features <- unique(quasar_data$feature_id)
+  for (j in seq_along(features)) {
 
-  p <- p1 + p2 + p3
-  ggsave("plot-lmm-concordance.pdf", p)
-  break
+    feature <- features[[j]]
+
+    quasar_filtered <- quasar_data |>
+      filter(feature_id == feature) |>
+      mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
+
+    apex_filtered <- apex_data |>
+      filter(gene == feature) |>
+      mutate(apex_variant_id = paste0(`#chrom`, ":", pos, ref, "-", alt)) |>
+      rename(apex_beta = beta, apex_se = se, apex_pval = pval)
+
+    if (nrow(apex_filtered) == 0 || nrow(quasar_filtered) == 0) {
+      next
+    } 
+
+    fit_data <- quasar_filtered |>
+      left_join(apex_filtered, by = join_by(variant_id == apex_variant_id)) |>
+      mutate(
+        log_pvalue = -log10(pvalue),
+        log_apex_pval = -log10(apex_pval)
+      )
+
+      lm_fit <- lm(log_pvalue ~ log_apex_pval, data = fit_data)
+    
+      pvalue_beta_vec <- c(pvalue_beta_vec, coef(lm_fit)[[2]])
+      gene_vec <- c(gene_vec, fit_data$feature_id[[1]])
+  }
 }
+
+lmm_plot_data <- tibble(
+  pvalue_beta = pvalue_beta_vec,
+  gene = gene_vec, 
+  model = "LMM"
+)
+
+plot_data <- bind_rows(
+  lm_plot_data, 
+  glm_plot_data, 
+  lmm_plot_data
+)
+
+p <- plot_data |>
+  filter(!is.na(pvalue_beta)) |>
+  filter(pvalue_beta < 2 & pvalue_beta > 0) |>
+  ggplot(aes(factor(model), pvalue_beta)) +
+  geom_boxplot() + 
+  theme_jp()
+
+ggsave(
+  "plot-concordance.pdf", 
+  p,
+  width = 12,
+  height = 8
+)

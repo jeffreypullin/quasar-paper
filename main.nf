@@ -217,12 +217,12 @@ workflow {
         .groupTuple()
 
     // Make plots.
-    //PLOT_CONCORDANCE(
-    //    quasar_grouped, 
-    //    tensorqtl_cis_nominal_grouped,
-    //    jaxqtl_cis_nominal_grouped,
-    //    apex_grouped
-    //)
+    PLOT_CONCORDANCE(
+        quasar_grouped, 
+        tensorqtl_cis_nominal_grouped,
+        jaxqtl_cis_nominal_grouped,
+        apex_grouped
+    )
     
     PLOT_POWER(
         quasar_grouped,
@@ -517,13 +517,11 @@ process PLOT_CONCORDANCE {
     publishDir "output"
 
     input:
-        tuple val(cell_type), val(chrs), val(quasar_pairs_list), val(quasar_time)
-        tuple val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
-        tuple val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_time)
-        tuple val(cell_type), val(chrs), val(apex_pairs_list), val(apex_time)
-    output: tuple path("plot-lm-concordance.pdf"), 
-        path("plot-glm-concordance.pdf"), 
-        path("plot-lmm-concordance.pdf")
+        tuple val(ind), val(cell_type), val(chrs), val(quasar_region), val(quasar_pairs_list), val(quasar_time)
+        tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
+        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+        tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
+    output: path("plot-concordance.pdf")
 
     script:
     """
