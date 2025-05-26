@@ -450,15 +450,15 @@ process ONEK1K_MAKE_GENELIST_CHUNKS {
 process COMPRESS_AND_INDEX_BED {
     conda "$projectDir/envs/cli.yaml"
 
-    input: tuple val(chr), val(cell_type), val(bed)
-    output: tuple val(chr), val(cell_type), 
-        path("${cell_type}-${chr}-bed.gz"),
-        path("${cell_type}-${chr}-bed.gz.tbi")
+    input: tuple val(cell_type), val(pb_type), val(bed)
+    output: tuple val(cell_type), val(pb_type), 
+        path("${cell_type}-${pb_type}-bed.gz"),
+        path("${cell_type}-${pb_type}-bed.gz.tbi")
 
     script:
     """ 
-    bgzip "$bed" -o "${cell_type}-${chr}-bed.gz"
-    tabix -p bed "${cell_type}-${chr}-bed.gz"
+    bgzip "$bed" -o "${cell_type}-${pb_type}-bed.gz"
+    tabix -p bed "${cell_type}-${pb_type}-bed.gz"
     """
 }
 

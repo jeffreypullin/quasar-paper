@@ -12,6 +12,7 @@ suppressPackageStartupMessages({
   library(forcats)
   library(glue)
   library(data.table)
+  library(ggupset)
 })
 
 # FIXME: Make this more reproducible.
@@ -52,7 +53,7 @@ jaxqtl_variant_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
   rowwise() |>
   mutate(n_sig = sum(map_dbl(
     jaxqtl_file,
-    function(x)  sum(read_parquet(x, col_select = "pval_nominal")$pval_nominal < 1e-6)))
+    function(x)  sum(read_parquet(x, col_select = "pval_nominal")$pval_nominal < 1e-6, na.rm = TRUE)))
   ) |>
   ungroup()
 
@@ -78,10 +79,13 @@ quasar_gene_data <- tibble(quasar_file = to_r_vec(args[5])) |>
   select(-model) |>
   filter(method != "quasar-p_glm") |>
   rowwise() |>
-  mutate(
-    n_sig = sum(p.adjust(read_tsv(quasar_file)$pvalue, method = "BH") < 0.01)
-  ) |>
-  ungroup()
+  mutate(pvalue = list(read_tsv(quasar_file)$pvalue)) |>
+  ungroup() |>
+  unnest(cols = pvalue) |>
+  summarise(
+    n_sig = sum(p.adjust(pvalue, method = "BH") < 0.01), 
+    .by = c(method, cell_type)
+  )
 
 tensorqtl_gene_data <- tibble(tensorqtl_file = to_r_vec(args[6])) |>
   mutate(
@@ -119,11 +123,13 @@ jaxqtl_gene_data <- tibble(jaxqtl_file = to_r_vec(args[7])) |>
   summarise(jaxqtl_file = list(jaxqtl_file), .by = c("chr", "cell_type")) |>
   mutate(method = "jaxqtl") |>
   rowwise() |>
-  mutate(n_sig = sum(map_dbl(
-    jaxqtl_file,
-    function(x) sum(p.adjust(read_tsv(jaxqtl_file)$pval_beta, method = "BH") < 0.01)
-  ))) |>
-  ungroup()
+  mutate(pvalue = list(read_tsv(jaxqtl_file)$pval_beta)) |>
+  ungroup() |>
+  unnest(cols = pvalue) |>
+  summarise(
+    n_sig = sum(p.adjust(pvalue, method = "BH") < 0.01, na.rm = TRUE), 
+    .by = c(method, cell_type)
+  )
 
 apex_gene_data <- tibble(apex_file = to_r_vec(args[8])) |>
   mutate(
@@ -132,8 +138,13 @@ apex_gene_data <- tibble(apex_file = to_r_vec(args[8])) |>
     method = "apex"
   ) |>
   rowwise() |>
-  mutate(n_sig = sum(p.adjust(read_tsv(apex_file)$egene_pval, method = "BH") < 0.01)) |>
-  ungroup()
+  mutate(pvalue = list(read_tsv(apex_file)$egene_pval)) |>
+  ungroup() |>
+  unnest(cols = pvalue) |>
+  summarise(
+    n_sig = sum(p.adjust(pvalue, method = "BH") < 0.01), 
+    .by = c(method, cell_type)
+  )
 
 # Variant-level analysis.
 
@@ -162,7 +173,8 @@ variant_power_plot <- variant_plot_data |>
     y = "Number of eSNPs",
     x = "Method"
   ) + 
-  theme_jp_vgrid()
+  theme_jp_vgrid() + 
+  theme(legend.direction = "vertical")
 
 # Gene level analysis.
 
@@ -193,10 +205,53 @@ gene_power_plot <- gene_plot_data |>
     y = "Number of eGenes",
     x = ""
   ) + 
-  theme_jp_vgrid()
+  theme_jp_vgrid() + 
+  theme(legend.direction = "vertical")
 
-power_plot <- variant_power_plot + gene_power_plot + 
-  plot_layout(guides = "collect") +
+# Upset plot
+
+upset_plot_data <- tibble(quasar_file = to_r_vec(args[5])) |>
+  mutate(
+    chr = str_extract(quasar_file, "chr[0-9]+"),
+    cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
+  ) |> 
+  mutate(method = paste0("quasar-", model)) |>
+  select(-model) |>
+  filter(method != "quasar-p_glm") |>
+  filter(cell_type == "B IN") |>
+  rowwise() |>
+  mutate(data = list(fread(quasar_file, select = c("pvalue", "feature_id")))) |>
+  ungroup() |>
+  summarise(data = list(bind_rows(data)), .by = method) |>
+  rowwise() |>
+  mutate(gene = list(data |> 
+    mutate(pvalue_adjust = p.adjust(pvalue, method = "BH")) |>
+    filter(pvalue_adjust < 0.01) |>
+    pull(feature_id))
+  ) |>
+  select(-data) |>
+  ungroup() |>
+  unnest(cols = gene) |>
+  mutate(method = method_lookup[method]) |>
+  summarise(method = list(method), .by = gene)
+
+upset_plot <- upset_plot_data |>
+  ggplot(aes(x = method)) +
+  geom_bar(fill = "#BBBBBB") +
+  scale_x_upset(n_intersections = 10) + 
+  labs(
+    y = "Number of significant genes",
+    x = "Combination of methods"
+  ) +
+  theme_jp() + 
+  theme(axis.title = element_text(family = "Helvetica", size = 18, color = "#222222")) + 
+  theme_combmatrix(
+    combmatrix.label.text = element_text(family = "Helvetica", size = 18, color = "#222222")
+  )
+
+power_plot <- variant_power_plot + gene_power_plot + upset_plot +
+  plot_layout(guides = "collect", nrow = 2) +
   plot_annotation(tag_levels = "a") &
   theme(
     plot.tag = element_text(size = 18),
@@ -207,5 +262,5 @@ ggsave(
   "plot-power.pdf", 
   power_plot,
   width = 12,
-  height = 8
+  height = 12
 )
