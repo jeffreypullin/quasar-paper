@@ -250,6 +250,9 @@ upset_plot <- upset_plot_data |>
     combmatrix.label.text = element_text(family = "Helvetica", size = 18, color = "#222222")
   )
 
+write_csv(gene_plot_data, "gene-power-data.csv")
+write_csv(variant_plot_data, "variant-power-data.csv")
+
 power_plot <- variant_power_plot + gene_power_plot + upset_plot +
   plot_layout(guides = "collect", nrow = 2) +
   plot_annotation(tag_levels = "a") &

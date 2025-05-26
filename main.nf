@@ -543,7 +543,7 @@ process PLOT_POWER {
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
         tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
-    output: path("plot-power.pdf")
+    output: tuple path("plot-power.pdf"), path("variant-power-data.csv"), path("gene-power-data.csv")
 
     script:
     """
@@ -569,7 +569,7 @@ process PLOT_TIME {
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
         tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
-    output: path("plot-time.pdf")
+    output: tuple path("plot-time.pdf"), path("time-data.csv")
 
     script:
     """

@@ -118,6 +118,8 @@ plot_data <- bind_rows(
     cell_type = factor(cell_type, levels = c("CD4 NC", "B IN", "Plasma"))
   )
 
+write_csv(plot_data, "time-data.csv")
+
 time_plot <- plot_data |>
   mutate(min = time / 60) |>
   ggplot(aes(method, min, fill = cell_type)) +
