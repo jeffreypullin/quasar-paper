@@ -210,20 +210,24 @@ gene_power_plot <- gene_plot_data |>
 
 # Upset plot
 
+count_data <- fread(args[9]) |> 
+  as_tibble() |>
+  select(-c(`#chr`, start, end)) |>
+  mutate(sum = rowSums(across(!starts_with("phenotype_id")))) |>
+  select(gene = phenotype_id, sum)
+
 upset_plot_data <- tibble(quasar_file = to_r_vec(args[5])) |>
   mutate(
     chr = str_extract(quasar_file, "chr[0-9]+"),
     cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
     model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
   ) |> 
-  mutate(method = paste0("quasar-", model)) |>
-  select(-model) |>
-  filter(method != "quasar-p_glm") |>
+  filter(model != "p_glm") |>
   filter(cell_type == "B IN") |>
   rowwise() |>
   mutate(data = list(fread(quasar_file, select = c("pvalue", "feature_id")))) |>
   ungroup() |>
-  summarise(data = list(bind_rows(data)), .by = method) |>
+  summarise(data = list(bind_rows(data)), .by = model) |>
   rowwise() |>
   mutate(gene = list(data |> 
     mutate(pvalue_adjust = p.adjust(pvalue, method = "BH")) |>
@@ -233,15 +237,16 @@ upset_plot_data <- tibble(quasar_file = to_r_vec(args[5])) |>
   select(-data) |>
   ungroup() |>
   unnest(cols = gene) |>
-  mutate(method = method_lookup[method]) |>
-  summarise(method = list(method), .by = gene)
+  mutate(model = model_lookup[model]) |>
+  summarise(model = list(model), .by = gene) |>
+  left_join(count_data, by = "gene")
 
 upset_plot <- upset_plot_data |>
-  ggplot(aes(x = method)) +
+  ggplot(aes(x = model)) +
   geom_bar(fill = "#BBBBBB") +
   scale_x_upset(n_intersections = 10) + 
   labs(
-    y = "Number of significant genes",
+    y = "Number of eGenes",
     x = "Combination of methods"
   ) +
   theme_jp() + 
@@ -250,20 +255,41 @@ upset_plot <- upset_plot_data |>
     combmatrix.label.text = element_text(family = "Helvetica", size = 18, color = "#222222")
   )
 
-write_csv(gene_plot_data, "gene-power-data.csv")
-write_csv(variant_plot_data, "variant-power-data.csv")
+total_boxplot <- upset_plot_data |> 
+  rowwise() |>
+  mutate(type = case_when(
+    length(model) == 5 ~ "all",
+    length(model) == 3 && 
+    "P GLMM" %in% model && 
+    "NB GLM" %in% model &&
+    "NB GLM, APL" %in% model ~ "count",
+    .default = "other"
+  )) |>
+  ungroup() |>
+  filter(type %in% c("all", "count")) |>
+  mutate(type = if_else(type == "all", "All models", "Count models only")) |>
+  ggplot(aes(factor(type), log10(sum))) +
+  geom_boxplot() +
+  coord_flip() + 
+  labs(
+    y = "log10(Total counts)",
+    x = "Type of eGene"
+  ) +
+  theme_jp_vgrid()
 
-power_plot <- variant_power_plot + gene_power_plot + upset_plot +
-  plot_layout(guides = "collect", nrow = 2) +
+power_plot <- ((variant_power_plot + gene_power_plot) + plot_layout(guides = "collect")) | (upset_plot / total_boxplot) + 
   plot_annotation(tag_levels = "a") &
   theme(
     plot.tag = element_text(size = 18),
     legend.direction = "vertical"
   )
 
+write_csv(gene_plot_data, "gene-power-data.csv")
+write_csv(variant_plot_data, "variant-power-data.csv")
+
 ggsave(
   "plot-power.pdf", 
   power_plot,
-  width = 12,
+  width = 15,
   height = 12
 )

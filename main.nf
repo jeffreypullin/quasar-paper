@@ -223,6 +223,8 @@ workflow {
         jaxqtl_cis_nominal_grouped,
         apex_grouped
     )
+
+    count_data = pheno_bed.filter({ it -> it[0] == "B IN" && it[1] == "sum"})
     
     PLOT_POWER(
         quasar_grouped,
@@ -230,7 +232,8 @@ workflow {
         tensorqtl_cis_grouped,
         jaxqtl_cis_nominal_grouped,
         jaxqtl_cis_grouped,
-        apex_grouped
+        apex_grouped,
+        count_data
     )     
     
     PLOT_TIME(
@@ -543,6 +546,7 @@ process PLOT_POWER {
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
         tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
+        tuple val(cell_type), val(pb_type), val(pheno_file)
     output: tuple path("plot-power.pdf"), path("variant-power-data.csv"), path("gene-power-data.csv")
 
     script:
@@ -555,7 +559,8 @@ process PLOT_POWER {
         "${quasar_region.collect()}" \
         "${tensorqtl_cis_list.collect()}" \
         "${jaxqtl_cis_list.collect()}" \
-        "${apex_region_list.collect()}"
+        "${apex_region_list.collect()}" \
+        "${pheno_file}"
     """
 }
 

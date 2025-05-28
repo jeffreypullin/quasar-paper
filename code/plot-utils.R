@@ -76,6 +76,16 @@ method_lookup <- c(
   "quasar-lmm" = "quasar (LMM)"
 )
 
+model_lookup <- c(
+  "nb_glm" = "NB GLM",
+  "nb_glm-apl" = "NB GLM, APL",
+  "p_glm" = "P GLM",
+  "lm" = "LM",
+  "lmm" = "LMM",
+  "p_glmm" = "P GLMM",
+  "nb_glmm" = "NB GLMM"
+)
+
 cell_type_cols <- c(
   "Plasma" = "#66CCEE",
   "B IN" = "#228833",

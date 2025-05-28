@@ -11,8 +11,8 @@ process RUN_QUASAR {
 
     script:
     def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
-    def grm_flag = (model.contains("lmm")) ? "-g ${grm}" : " "
-    def apl_flag = (model.endsWith("-apl")) ? "--use-apl" : " "
+    def grm_flag = (model.contains("lmm")) ? "-g ${grm}" : ""
+    def apl_flag = (model.endsWith("-apl")) ? "--use-apl" : ""
     def passed_model = (model.endsWith("-apl")) ? model.split("-")[0] : model
     """
     /usr/bin/time -p -o "${chr}-${cell_type}-${model}-time.txt" \
