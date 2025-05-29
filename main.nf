@@ -13,6 +13,7 @@ params.quasar_spec = "data/quasar-spec.tsv"
 include { RUN_APEX; RUN_QUASAR; RUN_JAXQTL_CIS; RUN_JAXQTL_CIS_NOMINAL; RUN_TENSORQTL_CIS; RUN_TENSORQTL_CIS_NOMINAL } from './modules/methods'
 include { RUN_QUASAR as RUN_QUASAR_PERM } from './modules/methods'
 include { RUN_JAXQTL_CIS_NOMINAL as RUN_JAXQTL_CIS_NOMINAL_PERM} from './modules/methods'
+include { RUN_JAXQTL_CIS as RUN_JAXQTL_CIS_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS_NOMINAL as RUN_TENSORQTL_CIS_NOMINAL_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS as RUN_TENSORQTL_CIS_PERM} from './modules/methods'
 include { RUN_APEX as RUN_APEX_PERM} from './modules/methods'
@@ -150,6 +151,7 @@ workflow {
       .map({ it -> [it[0], it[1], it[2], it[3], it[4], it[8], it[6], it[7]]})
 
     jaxqtl_cis_nominal_perm = RUN_JAXQTL_CIS_NOMINAL_PERM(permute_jaxqtl_input)
+    jaxqtl_cis_perm = RUN_JAXQTL_CIS_PERM(permute_jaxqtl_input)
 
     permute_tensorqtl_input = tensorqtl_input
       .combine(permute_bed_files)
@@ -201,6 +203,10 @@ workflow {
     jaxqtl_cis_nominal_perm_grouped = ind_channel
         .combine(jaxqtl_cis_nominal_perm)
         .groupTuple()
+    
+     jaxqtl_cis_perm_grouped = ind_channel
+        .combine(jaxqtl_cis_perm)
+        .groupTuple()
 
     tensorqtl_cis_nominal_perm_grouped  = ind_channel
         .combine(tensorqtl_cis_nominal_perm)
@@ -250,6 +256,7 @@ workflow {
        tensorqtl_cis_nominal_perm_grouped,
        tensorqtl_cis_perm_grouped,
        jaxqtl_cis_nominal_perm_grouped,
+       jaxqtl_cis_perm_grouped,
        apex_perm_grouped
     ) 
 
@@ -596,6 +603,7 @@ process PLOT_FDR {
        tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
        tuple val(ind), val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
        tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
     output: tuple path("plot-quasar-variant-fdr.pdf"), 
         path("plot-other-variant-fdr.pdf"), 
@@ -611,6 +619,7 @@ process PLOT_FDR {
         "${apex_pairs_list.collect()}" \
         "${quasar_region_list.collect()}" \
         "${tensorqtl_cis_list.collect()}" \
+        "${jaxqtl_cis_list.collect()}" \
         "${apex_region_list.collect()}"
     """
 }

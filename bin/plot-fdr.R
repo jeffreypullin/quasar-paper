@@ -204,7 +204,19 @@ tensorqtl_gene_data <- tibble(tensorqtl_file = to_r_vec(args[6])) |>
   ungroup() |>
   unnest(cols = pvalue)
 
-apex_gene_data <- tibble(apex_file = to_r_vec(args[7])) |>
+jaxqtl_gene_data <- tibble(jaxqtl_file = to_r_vec(args[7])) |>
+  mutate(
+    chr = str_extract(jaxqtl_file, "chr[0-9]+"),
+    cell_type = str_extract(jaxqtl_file, "(?<=jaxqtl-).*?(?=-chr)"),
+  ) |>
+  summarise(jaxqtl_file = list(jaxqtl_file), .by = c("chr", "cell_type")) |>
+  mutate(method = "jaxqtl") |>
+  rowwise() |>
+  mutate(pvalue = list(read_tsv(jaxqtl_file)$pval_beta)) |>
+  ungroup() |>
+  unnest(cols = pvalue)
+
+apex_gene_data <- tibble(apex_file = to_r_vec(args[8])) |>
   mutate(
     chr = str_extract(apex_file, "chr[0-9]+(?=\\.cis)"),
     cell_type = str_extract(apex_file, "(?<=apex-).*?(?=-chr)"),
@@ -217,6 +229,8 @@ apex_gene_data <- tibble(apex_file = to_r_vec(args[7])) |>
 
 other_plot_data <- bind_rows(
   tensorqtl_gene_data |>
+    select(method, cell_type, pvalue),
+  jaxqtl_gene_data |>
     select(method, cell_type, pvalue),
   apex_gene_data |>
     select(method, cell_type, pvalue)
