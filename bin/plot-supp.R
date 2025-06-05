@@ -1,7 +1,5 @@
 #!/usr/bin/env Rscript
 
-BiocManager::install("qvalue")
-
 suppressPackageStartupMessages({
   library(dplyr)
   library(readr)
