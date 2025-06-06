@@ -87,10 +87,17 @@ for (i in seq_len(nrow(lm_qtl_data))) {
         log_pval_nominal = -log10(pval_nominal)
       )
 
-      lm_fit <- lm(log_pvalue ~ log_pval_nominal, data = fit_data)
+    if (any(is.na(fit_data$log_pvalue)) || any(is.na(fit_data$log_pval_nominal))) {
+      next
+    }
+    if (nrow(fit_data) < 10) {
+        next
+    }
+
+    lm_fit <- cor.test( ~ log_pvalue + log_pval_nominal, data = fit_data)
     
-      pvalue_beta_vec <- c(pvalue_beta_vec, coef(lm_fit)[[2]])
-      gene_vec <- c(gene_vec, fit_data$feature_id[[1]])
+    pvalue_beta_vec <- c(pvalue_beta_vec, unname(lm_fit$estimate))
+    gene_vec <- c(gene_vec, fit_data$feature_id[[1]])
   }
 }
 
@@ -143,9 +150,16 @@ for (i in seq_len(nrow(glm_qtl_data))) {
         log_pvalue = -log10(pvalue),
         log_pval_nominal = -log10(pval_nominal)
       )
+    
+    if (any(is.na(data$log_pvalue)) || any(is.na(data$log_pval_nominal))) {
+        next
+    }
+    if (nrow(data) < 10) {
+        next
+    }
 
-    lm_fit <- lm(log_pvalue ~ log_pval_nominal, data = data)
-    pvalue_beta_vec <- c(pvalue_beta_vec, coef(lm_fit)[[2]])
+    glm_fit <- cor.test(~ log_pvalue + log_pval_nominal, data = data)
+    pvalue_beta_vec <- c(pvalue_beta_vec, unname(glm_fit$estimate))
     gene_vec <- c(gene_vec, data$feature_id[[1]])
   }
 }
@@ -202,11 +216,18 @@ for (i in seq_len(nrow(lmm_qtl_data))) {
         log_pvalue = -log10(pvalue),
         log_apex_pval = -log10(apex_pval)
       )
-
-      lm_fit <- lm(log_pvalue ~ log_apex_pval, data = fit_data)
     
-      pvalue_beta_vec <- c(pvalue_beta_vec, coef(lm_fit)[[2]])
-      gene_vec <- c(gene_vec, fit_data$feature_id[[1]])
+    if (any(is.na(fit_data$log_pvalue)) || any(is.na(fit_data$log_apex_pval))) {
+        next
+    }
+    if (nrow(fit_data) < 10) {
+        next
+    }
+
+    lmm_fit <- cor.test(~ log_pvalue + log_apex_pval, data = fit_data)
+    
+    pvalue_beta_vec <- c(pvalue_beta_vec, unname(lmm_fit$estimate))
+    gene_vec <- c(gene_vec, fit_data$feature_id[[1]])
   }
 }
 
@@ -225,9 +246,15 @@ plot_data <- bind_rows(
 p <- plot_data |>
   filter(!is.na(pvalue_beta)) |>
   filter(pvalue_beta < 2 & pvalue_beta > 0) |>
+  mutate(model = factor(model, levels = c("LM", "NB-GLM", "LMM"))) |>
   ggplot(aes(factor(model), pvalue_beta)) +
-  geom_boxplot() + 
-  theme_jp()
+  geom_boxplot() +
+  coord_flip(ylim = c(0, 1)) + 
+  labs(
+    y = "log10 p-value correlation",
+    x = "Statistical model"
+  ) + 
+  theme_jp_vgrid()
 
 ggsave(
   "plot-concordance.pdf", 
