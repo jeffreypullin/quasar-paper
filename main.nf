@@ -43,6 +43,7 @@ workflow {
 
     geno_pcs = ONEK1K_COMPUTE_GENOTYPE_PCS(all_bed)
     grm = ONEK1K_CREATE_GRM(all_bed)
+    apex_grm = CREATE_APEX_GRM(all_bed)
 
     covs = ONEK1K_PROCESS_COVARIATES(cell_type_pb.filter({it -> it[1] == "mean"}), geno_pcs) 
     pheno_bed = ONEK1K_MAKE_PHENO_BED(cell_type_pb, params.onek1k_feature_annot)
@@ -112,7 +113,7 @@ workflow {
     // Run apex.
     pheno_bed_gz = COMPRESS_AND_INDEX_BED(pheno_bed)
     apex_covs = PROCESS_APEX_COVS(t_covs)
-    sparse_grm = TO_SPARSE_GRM_FORMAT(grm)
+    //sparse_grm = TO_SPARSE_GRM_FORMAT(grm)
 
     apex_input = pheno_bed_gz
         .filter({ x -> x[1] == "mean" })
@@ -120,7 +121,7 @@ workflow {
         .map({ it -> [it[4], it[0], it[1], it[2], it[3]] })
         .combine(filt_vcf_files, by: 0)
         .combine(chrs.combine(apex_covs), by: [0, 1])
-        .combine(sparse_grm)
+        .combine(apex_grm)
         .filter( { it -> it[1] == "B IN" || it[1] == "Plasma" || it[1] == "CD4 NC"})
     
     apex = RUN_APEX(apex_input) 
@@ -383,6 +384,21 @@ process ONEK1K_CREATE_GRM {
     plink2 --bfile $prefix --indep-pairwise 250 50 0.2 --out onek1k_pruning_info --threads 2
     plink2 --bfile $prefix --extract onek1k_pruning_info.prune.in --make-king square --out king_ibd_out --threads 2
     process-grm.R onek1k
+    """
+}
+
+process CREATE_APEX_GRM {
+    conda "$projectDir/envs/cli.yaml"
+
+    input: val bed
+    output: path("apex-grm.tsv") 
+
+    script:
+    def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
+    """
+    plink2 --bfile $prefix --indep-pairwise 250 50 0.2 --out pruning --threads 2
+    plink2 --bfile $prefix --extract pruning.prune.in --make-rel square --out out
+    process-apex-grm.R out.rel out.rel.id
     """
 }
 
