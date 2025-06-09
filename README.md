@@ -1,19 +1,7 @@
-# QUASAR analysis 
+# Code accompanying the paper: "Flexible and efficient count-distribution and mixed-model methods for eQTL mapping with quasar"
 
-This repository contains the code used to perform analysis for the paper:
+This repository contains the code used to perform the analysis described in:
 
 > TODO
 
-It contains code to analyse the following datasets:
-
-* Randolph et al. (2024)
-
-
-Steps:
-
-- 
-
-
-
-
-
+For a high level overview of the computational workflow see `main.nf`.
