@@ -19,6 +19,40 @@ suppressPackageStartupMessages({
 source("/home/jp2045/quasar-paper/code/plot-utils.R")
 args <- commandArgs(trailingOnly = TRUE)
 
+# NB GLMM phi.
+
+phi_data <- tibble(quasar_file = to_r_vec(args[1])) |>
+  mutate(
+    chr = str_extract(quasar_file, "chr[0-9]+"),
+    cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
+  ) |> 
+  filter(model == "nb_glmm") |>
+  rowwise() |>
+  mutate(phi = list(fread(quasar_file, select = c("phi", "feature_id")) |>
+                      summarise(phi = first(phi), .by = feature_id) |>
+                      pull(phi))
+  ) |>
+  ungroup()
+
+p <- phi_data |>
+  unnest(cols = phi) |>
+  select(-c(quasar_file, chr)) |>
+  ggplot(aes(log10(phi))) + 
+  geom_histogram() + 
+  labs(
+    x = "log10(phi)",
+    y = "Count"
+  ) + 
+  theme_jp()
+
+ggsave(
+  "plot-nb-glmm-phi.pdf", 
+  p,
+  width = 10,
+  height = 8
+)
+
 # Plot effect of APL on phi.
 
 phi_data <- tibble(quasar_file = to_r_vec(args[1])) |>
@@ -28,6 +62,7 @@ phi_data <- tibble(quasar_file = to_r_vec(args[1])) |>
     model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
   ) |> 
   filter(model %in% c("nb_glm", "nb_glm-apl")) |>
+  filter(cell_type %in% c("Plasma", "B IN", "CD4 NC")) |>
   rowwise() |>
   mutate(phi = list(fread(quasar_file, select = c("phi", "feature_id")) |>
                       summarise(phi = first(phi), .by = feature_id) |>
@@ -40,7 +75,7 @@ p <- phi_data |>
   select(-c(quasar_file, chr)) |>
   filter(phi < 10) |>
   mutate(use_apl = if_else(model == "nb_glm", "MLE", "APL")) |>
-  ggplot(aes(cell_type, log10(phi), fill = use_apl)) + 
+  ggplot(aes(cell_type, log10(phi), fill = use_apl)) +
   scale_fill_manual(values = c("#009988", "#EE7733")) +
   geom_boxplot() + 
   labs(
@@ -50,7 +85,7 @@ p <- phi_data |>
   theme_jp()
 
 ggsave(
-  "plot-phi.pdf", 
+  "plot-apl-phi.pdf", 
   p,
   width = 10,
   height = 8

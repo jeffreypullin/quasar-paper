@@ -17,6 +17,7 @@ include { RUN_JAXQTL_CIS as RUN_JAXQTL_CIS_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS_NOMINAL as RUN_TENSORQTL_CIS_NOMINAL_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS as RUN_TENSORQTL_CIS_PERM} from './modules/methods'
 include { RUN_APEX as RUN_APEX_PERM} from './modules/methods'
+include { RUN_QUASAR_RESIDUALISE ; RUN_QUASAR_TRANS} from './modules/methods'
 
 workflow {
 
@@ -63,8 +64,10 @@ workflow {
       .combine(chrs.combine(covs), by: [0, 1])
       .combine(grm)
       .combine(quasar_spec, by: [0, 1, 2])
-      .filter( { it -> it[1] == "B IN" || it[1] == "Plasma" || it[1] == "CD4 NC"})
-      .filter( { it -> it[7] != "nb_glmm"})
+      .filter( { it -> (it[7] == "lm" || it[7] == "nb_glm-apl") ||
+                       (it[1] == "B IN" && it[7] != "nb_glmm") || 
+                       (it[1] == "CD4 NC" && it[7] != "nb_glmm") ||
+                       (it[1] == "Plasma") })
       .filter( { it -> it[7] != "nb_glmm-apl"})
 
     quasar = RUN_QUASAR(quasar_input)
@@ -140,6 +143,7 @@ workflow {
     permute_vcf_files = PERMUTE_VCF(rep_vcf_files)
     
     permute_quasar_input = quasar_input
+      .filter( {it -> it[1] == "B IN" || it[1] == "Plasma" || it[1] == "CD4 NC" } )
       .filter( {it -> it[0] == "chr22" })
       .combine(permute_bed_files, by: 0)
       .map({ it -> [it[0], it[1], it[2], it[3], it[8], it[5], it[6], it[7]]})
@@ -224,7 +228,7 @@ workflow {
         .groupTuple()
 
     // Make plots.
-    PLOT_CONCORDANCE(
+    concordance_out = PLOT_CONCORDANCE(
         quasar_grouped, 
         tensorqtl_cis_nominal_grouped,
         jaxqtl_cis_nominal_grouped,
@@ -243,7 +247,7 @@ workflow {
         count_data
     )     
     
-    PLOT_TIME(
+    time_out = PLOT_TIME(
         quasar_grouped,
         tensorqtl_cis_nominal_grouped,
         tensorqtl_cis_grouped,
@@ -252,7 +256,16 @@ workflow {
         apex_grouped
     )
 
-    PLOT_FDR(
+    PLOT_CALIBRATION(
+       quasar_perm_grouped,
+       tensorqtl_cis_nominal_perm_grouped,
+       tensorqtl_cis_perm_grouped,
+       jaxqtl_cis_nominal_perm_grouped,
+       jaxqtl_cis_perm_grouped,
+       apex_perm_grouped
+    ) 
+
+     PLOT_FDR(
        quasar_perm_grouped,
        tensorqtl_cis_nominal_perm_grouped,
        tensorqtl_cis_perm_grouped,
@@ -265,7 +278,9 @@ workflow {
        quasar_grouped,
        tensorqtl_cis_nominal_perm_grouped,
        tensorqtl_cis_perm_grouped
-    )     
+    )    
+
+    PLOT_ADDITIONAL(time_out.map({ it -> it[2] }), concordance_out.map({it -> it[1]})) 
 }
  
 // OneK1K data.
@@ -547,7 +562,7 @@ process PLOT_CONCORDANCE {
         tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_time)
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
         tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
-    output: path("plot-concordance.pdf")
+    output: tuple path("plot-concordance.pdf"), path("plot-concordance.rds")
 
     script:
     """
@@ -570,7 +585,9 @@ process PLOT_POWER {
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
         tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
         tuple val(cell_type), val(pb_type), val(pheno_file)
-    output: tuple path("plot-power.pdf"), path("variant-power-data.csv"), path("gene-power-data.csv")
+    output: tuple path("plot-comparison-power.pdf"), path("plot-overall-power.pdf"), path("plot-supp-power.pdf"),
+        path("plot-cor-method-power.pdf"), path("variant-power-data.csv"), path("gene-power-data.csv"), 
+        path("overall-variant-data.csv"), path("overall-gene-data.csv")
 
     script:
     """
@@ -597,7 +614,7 @@ process PLOT_TIME {
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
         tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
-    output: tuple path("plot-time.pdf"), path("time-data.csv")
+    output: tuple path("plot-time.pdf"), path("time-data.csv"), path("plot-time.rds")
 
     script:
     """
@@ -611,6 +628,32 @@ process PLOT_TIME {
     """
 }
 
+process PLOT_CALIBRATION {
+    publishDir "output"
+
+    input:
+       tuple val(ind), val(cell_type), val(chrs), val(quasar_region_list), val(quasar_pairs_list), val(quasar_time)
+       tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
+       tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
+       tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
+    output: tuple path("plot-variant-calibration.pdf"), path("plot-gene-calibration.pdf")
+
+    script:
+    """
+    plot-calibration.R \
+        "${quasar_pairs_list.collect()}" \
+        "${tensorqtl_pairs_list.collect()}" \
+        "${jaxqtl_pairs_list.collect()}" \
+        "${apex_pairs_list.collect()}" \
+        "${quasar_region_list.collect()}" \
+        "${tensorqtl_cis_list.collect()}" \
+        "${jaxqtl_cis_list.collect()}" \
+        "${apex_region_list.collect()}"
+    """
+}
+
 process PLOT_FDR {
     publishDir "output"
 
@@ -621,10 +664,7 @@ process PLOT_FDR {
        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
        tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
        tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
-    output: tuple path("plot-quasar-variant-fdr.pdf"), 
-        path("plot-other-variant-fdr.pdf"), 
-        path("plot-quasar-gene-fdr.pdf"),
-        path("plot-other-gene-fdr.pdf")
+    output: path("plot-fdr.pdf")
 
     script:
     """
@@ -647,7 +687,7 @@ process PLOT_SUPP {
         tuple val(ind), val(cell_type), val(chrs), val(quasar_region), val(quasar_pairs_list), val(quasar_time)
         tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
         tuple val(ind), val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
-    output: tuple path("plot-phi.pdf"), path("plot-null-hist.pdf")
+    output: tuple path("plot-apl-phi.pdf"), path("plot-nb-glmm-phi.pdf"), path("plot-null-hist.pdf")
 
     script:
     """
@@ -656,4 +696,19 @@ process PLOT_SUPP {
         "${tensorqtl_pairs_list.collect()}" \
         "${tensorqtl_cis_list.collect()}"
     """
+}
+
+process PLOT_ADDITIONAL {
+    publishDir "output"
+
+    input: 
+        val(time_plot)
+        val(concordance_plot)
+    output: path("figure-1.pdf")
+
+    script: 
+    """
+    plot-additional.R $time_plot $concordance_plot
+    """
+
 }

@@ -31,6 +31,7 @@ quasar_data <- tibble(quasar_file = to_r_vec(args[1])) |>
     cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
     model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-time)")),
   ) |> 
+  filter(cell_type %in% c("Plasma", "B IN", "CD4 NC")) |>
   rowwise() |>
   mutate(time = read_time(quasar_file)) |>
   ungroup() |>
@@ -112,9 +113,11 @@ plot_data <- bind_rows(
   tensorqtl_cis_data,
   tensorqtl_cis_nominal_data
 ) |>
+  add_row(cell_type = "B IN", method = "quasar-nb_glmm", time = 0) |>
+  add_row(cell_type = "CD4 NC", method = "quasar-nb_glmm", time = 0) |>
   mutate(
     model_type = model_type_lookup[method],
-    method = fct_reorder(factor(method_lookup[method]), time, .desc = TRUE),
+    method = fct_reorder(factor(method_lookup[method]), time, .fun = max, .desc = TRUE),
     cell_type = factor(cell_type, levels = c("CD4 NC", "B IN", "Plasma"))
   )
 
@@ -131,11 +134,17 @@ time_plot <- plot_data |>
     y = "Time (min)",
     fill = "Cell type",
     x = "Method"
-  ) + 
-  theme_jp_vgrid()
+  ) +
+  theme_jp_vgrid() +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+
+saveRDS(time_plot, "plot-time.rds")
 
 ggsave(
-  "plot-time.pdf", 
+  "plot-time.pdf",
   time_plot,
   width = 10,
   height = 6

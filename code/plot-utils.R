@@ -60,19 +60,22 @@ theme_jp_vgrid <- function() {
 }
 
 method_lookup <- c(
-  "tensorqtl" = "tensorQTL",
+  "tensorqtl" = "tensorQTL (LM)",
   "tensorqtl_acat" = "tensorQTL (ACAT)",
-  "apex" = "apex",
-  "jaxqtl" = "jaxQTL",
+  "tensorqtl_qvalue" = "tensorQTL (qvalue)",
+  "tensorqtl_acat_qvalue" = "tensorQTL (ACAT, qvalue)",
+  "apex" = "apex (LMM)",
+  "jaxqtl" = "jaxQTL (NB-GLM)",
   "jaxqtl_cis" = "jaxQTL (cis)",
   "jaxqtl_cis_nominal" = "jaxQTL (cis nominal)",
   "tensorqtl_cis" = "tensorQTL (cis)",
   "tensorqtl_cis_nominal" = "tensorQTL (cis nominal)",
-  "quasar-nb_glm" = "quasar (NB GLM)",
-  "quasar-nb_glm-apl" = "quasar (NB GLM, APL)",
-  "quasar-p_glm" = "quasar (P GLM)",
+  "quasar-nb_glm" = "quasar (NB-GLM)",
+  "quasar-nb_glm-apl" = "quasar (NB-GLM, APL)",
+  "quasar-p_glm" = "quasar (P-GLM)",
   "quasar-lm" = "quasar (LM)",
-  "quasar-p_glmm" = "quasar (P GLMM)",
+  "quasar-p_glmm" = "quasar (P-GLMM)",
+  "quasar-nb_glmm" = "quasar (NB-GLMM)",
   "quasar-lmm" = "quasar (LMM)"
 )
 
@@ -90,4 +93,11 @@ cell_type_cols <- c(
   "Plasma" = "#66CCEE",
   "B IN" = "#228833",
   "CD4 NC" = "#EE6677"
+)
+
+pvalue_method_lookup <- c(
+  "pvalue_perm_q" = "Perm, q-value",
+  "pvalue_acat_bh" = "ACAT, BH",
+  "pvalue_acat_q" = "ACAT, q-value",
+  "pvalue_perm_bh" = "Perm, BH"
 )

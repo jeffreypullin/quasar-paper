@@ -249,15 +249,17 @@ p <- plot_data |>
   mutate(model = factor(model, levels = c("LM", "NB-GLM", "LMM"))) |>
   ggplot(aes(factor(model), pvalue_beta)) +
   geom_boxplot() +
-  coord_flip(ylim = c(0, 1)) + 
+  coord_flip(ylim = c(0, 1)) +
   labs(
     y = "log10 p-value correlation",
     x = "Statistical model"
   ) + 
   theme_jp_vgrid()
 
+saveRDS(p, "plot-concordance.rds")
+
 ggsave(
-  "plot-concordance.pdf", 
+  "plot-concordance.pdf",
   p,
   width = 12,
   height = 8
