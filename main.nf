@@ -17,7 +17,6 @@ include { RUN_JAXQTL_CIS as RUN_JAXQTL_CIS_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS_NOMINAL as RUN_TENSORQTL_CIS_NOMINAL_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS as RUN_TENSORQTL_CIS_PERM} from './modules/methods'
 include { RUN_APEX as RUN_APEX_PERM} from './modules/methods'
-include { RUN_QUASAR_RESIDUALISE ; RUN_QUASAR_TRANS} from './modules/methods'
 
 workflow {
 
@@ -281,6 +280,8 @@ workflow {
     )    
 
     PLOT_ADDITIONAL(time_out.map({ it -> it[2] }), concordance_out.map({it -> it[1]})) 
+
+    PLOT_SIMS(grm)
 }
  
 // OneK1K data.
@@ -298,7 +299,7 @@ process ONEK1K_EXTRACT_INDIV_IDS {
 
 process ONEK1K_CREATE_CELLTYPE_PB {
     conda "$projectDir/envs/scanpy.yaml"
-    label "small"
+    label "tiny"
 
     input:
         tuple val(cell_type), val(pb_type) 
@@ -711,4 +712,16 @@ process PLOT_ADDITIONAL {
     plot-additional.R $time_plot $concordance_plot
     """
 
+}
+
+process PLOT_SIMS {
+    publishDir "output"
+
+    input: val(grm)
+    output: path("plot-trace-approx-sims.pdf")
+
+    script:
+    """
+    plot-trace-approx-sims.R $grm
+    """
 }

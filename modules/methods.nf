@@ -23,50 +23,11 @@ process RUN_QUASAR {
       ${grm_flag} \
       -o "${chr}-${cell_type}-${model}" \
       --model $passed_model \
-      --mode                               cis \
+      --mode                                                                                          cis \
       ${apl_flag} \
       --verbose
     gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
     gzip "${chr}-${cell_type}-${model}-cis-region.txt"
-    """
-}
-
-process RUN_QUASAR_RESIDUALISE {
-    label "quasar"
-
-    input: tuple val(pheno_bed), val(covs), val(plink_bed), val(model)
-    output: tuple val(model), path("${model}-resids.bed"), path("${model}-fit.lst")
-
-    script:
-    def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
-    """
-    /home/jp2045/quasar/build/quasar \
-      -p "$prefix" \
-      -b "$pheno_bed" \
-      -c "$covs" \
-      -o "${model}" \
-      --model $model \
-      --mode           residualise 
-    """
-}
-
-process RUN_QUASAR_TRANS {
-    label "quasar"
-
-    input: tuple val(chr), val(resid_bed), val(model_fit), val(covs), val(plink_bed), val(model)
-    output: tuple val(chr), val(model), path("${chr}-${model}-trans-variant.txt")
-
-    script:
-    def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
-    """
-    /home/jp2045/quasar/build/quasar \
-      -p "$prefix" \
-      -r $resid_bed \
-      -f $model_fit \
-      -c "$covs" \
-      --model $model \
-      -o "${chr}-${model}" \
-      --mode trans
     """
 }
 
@@ -113,7 +74,7 @@ process RUN_JAXQTL_CIS {
       --pheno "$pheno" \
       --model "NB" \
       --mode "cis" \
-      --window 500000 \
+      --window 1000000 \
       --genelist $chunk \
       --test-method "score" \
       --nperm 1000 \
@@ -142,7 +103,7 @@ process RUN_JAXQTL_CIS_NOMINAL {
       --pheno "$pheno" \
       --model "NB" \
       --mode "nominal" \
-      --window 500000 \
+      --window 1000000 \
       --genelist $chunk \
       --test-method "score" \
       --nperm 1000 \
@@ -155,7 +116,7 @@ process RUN_JAXQTL_CIS_NOMINAL {
 
 process RUN_TENSORQTL_CIS {
     conda "$projectDir/envs/tensorqtl.yaml"
-    label "tensorqtl"
+    label "tensorqtl_cis"
 
     input:  tuple val(cell_type), val(pheno), val(covs), val(bed)
     output: tuple val(cell_type),

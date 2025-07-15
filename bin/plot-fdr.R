@@ -95,11 +95,7 @@ variant_plot_data <- bind_rows(
     method = fct_reorder(factor(method_lookup[method]), prop),
     cell_type = factor(cell_type, levels = c("Plasma", "B IN", "CD4 NC"))
   ) |>
-  select(-ends_with("file")) |>
-  mutate(
-    prop_min = prop - 1.96 * prop * (1 - prop) / sqrt(n),
-    prop_max = prop + 1.96 * prop * (1 - prop) / sqrt(n)
-  )
+  select(-ends_with("file"))
 
 data_hline <- tibble(
   alpha_level = c(1e-2, 1e-4, 1e-5),
@@ -108,12 +104,6 @@ data_hline <- tibble(
 p1 <- variant_plot_data |>
   ggplot(aes(method, prop, fill = cell_type)) +
   geom_col(position = position_dodge(width = 0.9)) +
-  geom_errorbar(
-    aes(ymin = prop_min, ymax = prop_max),
-    position = position_dodge(width = 0.9),
-    width = 0.4,
-    alpha = 0.4
-  ) +
   geom_hline(
     data = data_hline,
     aes(yintercept = alpha_level),
@@ -209,11 +199,7 @@ gene_plot_data <- bind_rows(
     method = fct_reorder(factor(method_lookup[method]), prop),
     cell_type = factor(cell_type, levels = c("Plasma", "B IN", "CD4 NC"))
   ) |>
-  select(-ends_with("file")) |>
-  mutate(
-    prop_min = prop - 1.96 * prop * (1 - prop) / sqrt(n),
-    prop_max = prop + 1.96 * prop * (1 - prop) / sqrt(n)
-  )
+  select(-ends_with("file"))
 
 data_hline <- tibble(
   alpha_level = c(0.1, 0.01)
@@ -222,12 +208,6 @@ data_hline <- tibble(
 p2 <- gene_plot_data |>
   ggplot(aes(method, prop, fill = cell_type)) +
   geom_col(position = position_dodge(width = 0.9)) +
-  geom_errorbar(
-    aes(ymin = prop_min, ymax = prop_max),
-    position = position_dodge(width = 0.9),
-    width = 0.4,
-    alpha = 0.4
-  ) +
   geom_hline(
     data = data_hline,
     aes(yintercept = alpha_level),
