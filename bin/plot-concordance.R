@@ -49,6 +49,70 @@ apex_files_data <- tibble(apex_file = to_r_vec(args[4])) |>
   ) |>
   filter(cell_type == "B IN")
 
+# Comparison of Negative Binomial GLM model methods.
+glm_qtl_data <- left_join(
+  quasar_files_data |>
+    filter(model == "nb_glm"),
+  jaxqtl_files_data,
+  by = "chr"
+)
+
+pvalue_beta_vec <- numeric(0)
+gene_vec <- character(0)
+for (i in seq_len(nrow(glm_qtl_data))) {
+
+  quasar_data <- read_tsv(
+    glm_qtl_data$quasar_file[[i]],
+    show_col_types = FALSE
+  )
+
+  jaxqtl_data <- bind_rows(
+    lapply(glm_qtl_data$jaxqtl_file[[i]], read_parquet)
+  )
+
+  features <- unique(quasar_data$feature_id)
+  for (j in seq_along(features)) {
+
+    feature <- features[[j]]
+
+    quasar_filtered <- quasar_data |>
+      filter(feature_id == feature) |>
+      mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
+
+    jaxqtl_filtered <- jaxqtl_data |>
+      filter(phenotype_id == feature)
+
+    if (nrow(jaxqtl_filtered) == 0 || nrow(quasar_filtered) == 0) {
+      next
+    }
+
+    data <- quasar_filtered |>
+      left_join(jaxqtl_filtered, by = join_by(variant_id == snp)) |>
+      mutate(
+        log_pvalue = -log10(pvalue),
+        log_pval_nominal = -log10(pval_nominal)
+      )
+    
+    if (any(is.na(data$log_pvalue)) || any(is.na(data$log_pval_nominal))) {
+        next
+    }
+    if (nrow(data) < 10) {
+        next
+    }
+
+
+    glm_fit <- cor.test(~ log_pvalue + log_pval_nominal, data = data)
+    pvalue_beta_vec <- c(pvalue_beta_vec, unname(glm_fit$estimate))
+    gene_vec <- c(gene_vec, data$feature_id[[1]])
+  }
+}
+
+glm_plot_data <- tibble(
+  pvalue_beta = pvalue_beta_vec,
+  gene = gene_vec,
+  model = "NB-GLM"
+)
+
 # Comparison of linear model methods.
 lm_qtl_data <- left_join(
   quasar_files_data |>
@@ -105,69 +169,6 @@ lm_plot_data <- tibble(
   pvalue_beta = pvalue_beta_vec,
   gene = gene_vec, 
   model = "LM"
-)
-
-# Comparison of Negative Binomial GLM model methods.
-glm_qtl_data <- left_join(
-  quasar_files_data |>
-    filter(model == "nb_glm"),
-  jaxqtl_files_data,
-  by = "chr"
-)
-
-pvalue_beta_vec <- numeric(0)
-gene_vec <- character(0)
-for (i in seq_len(nrow(glm_qtl_data))) {
-
-  quasar_data <- read_tsv(
-    glm_qtl_data$quasar_file[[i]],
-    show_col_types = FALSE
-  )
-
-  jaxqtl_data <- bind_rows(
-    lapply(glm_qtl_data$jaxqtl_file[[i]], read_parquet)
-  )
-
-  features <- unique(quasar_data$feature_id)
-  for (j in seq_along(features)) {
-
-    feature <- features[[j]]
-
-    quasar_filtered <- quasar_data |>
-      filter(feature_id == feature) |>
-      mutate(variant_id = paste0(chrom, ":", pos, alt, "-", ref))
-
-    jaxqtl_filtered <- jaxqtl_data |>
-      filter(phenotype_id == feature)
-
-    if (nrow(jaxqtl_filtered) == 0 || nrow(quasar_filtered) == 0) {
-      next
-    }
-
-    data <- quasar_filtered |>
-      left_join(jaxqtl_filtered, by = join_by(variant_id == snp)) |>
-      mutate(
-        log_pvalue = -log10(pvalue),
-        log_pval_nominal = -log10(pval_nominal)
-      )
-    
-    if (any(is.na(data$log_pvalue)) || any(is.na(data$log_pval_nominal))) {
-        next
-    }
-    if (nrow(data) < 10) {
-        next
-    }
-
-    glm_fit <- cor.test(~ log_pvalue + log_pval_nominal, data = data)
-    pvalue_beta_vec <- c(pvalue_beta_vec, unname(glm_fit$estimate))
-    gene_vec <- c(gene_vec, data$feature_id[[1]])
-  }
-}
-
-glm_plot_data <- tibble(
-  pvalue_beta = pvalue_beta_vec,
-  gene = gene_vec,
-  model = "NB-GLM"
 )
 
 # Comparison of linear mixed model methods.
@@ -245,16 +246,16 @@ plot_data <- bind_rows(
 
 p <- plot_data |>
   filter(!is.na(pvalue_beta)) |>
-  filter(pvalue_beta < 2 & pvalue_beta > 0) |>
   mutate(model = factor(model, levels = c("LM", "NB-GLM", "LMM"))) |>
-  ggplot(aes(factor(model), pvalue_beta)) +
-  geom_boxplot() +
-  coord_flip(ylim = c(0, 1)) +
+  ggplot(aes(pvalue_beta)) +
+  geom_histogram() +
   labs(
-    y = "log10 p-value correlation",
-    x = "Statistical model"
-  ) + 
-  theme_jp_vgrid()
+    x = "log10 p-value correlation",
+    y = "Count"
+  ) +
+  facet_wrap(~model, ncol = 1) +
+  theme_jp() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 
 saveRDS(p, "plot-concordance.rds")
 
