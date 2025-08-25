@@ -512,7 +512,7 @@ process PERMUTE_BED {
     script:
     def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
     """
-    permute-fam.R ${prefix}.fam ${chr}
+    permute-fam.R ${prefix}.fam ${chr} ${ind}
     cp ${prefix}.bim ./"permute-${chr}.bim"
     cp ${prefix}.bed ./"permute-${chr}.bed"
     """
@@ -631,6 +631,7 @@ process PLOT_TIME {
 
 process PLOT_CALIBRATION {
     publishDir "output"
+    label "tiny"
 
     input:
        tuple val(ind), val(cell_type), val(chrs), val(quasar_region_list), val(quasar_pairs_list), val(quasar_time)
@@ -657,6 +658,7 @@ process PLOT_CALIBRATION {
 
 process PLOT_FDR {
     publishDir "output"
+    label "tiny"
 
     input:
        tuple val(ind), val(cell_type), val(chrs), val(quasar_region_list), val(quasar_pairs_list), val(quasar_time)

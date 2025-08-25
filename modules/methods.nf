@@ -5,8 +5,8 @@ process RUN_QUASAR {
     input: tuple val(chr), val(cell_type), val(pb_type), val(pheno_bed), 
         val(plink_bed), val(covs), val(grm), val(model)
     output: tuple val(chr), val(cell_type),
-        path("${chr}-${cell_type}-${model}-cis-region.txt.gz"), 
-        path("${chr}-${cell_type}-${model}-cis-variant.txt.gz"),
+        path("${chr}-${cell_type}-${model}-quasar-cis-region.txt.gz"), 
+        path("${chr}-${cell_type}-${model}-quasar-cis-variant.txt.gz"),
         path("${chr}-${cell_type}-${model}-time.txt")
 
     script:
@@ -26,8 +26,8 @@ process RUN_QUASAR {
       --mode                                                                                          cis \
       ${apl_flag} \
       --verbose
-    gzip "${chr}-${cell_type}-${model}-cis-variant.txt"
-    gzip "${chr}-${cell_type}-${model}-cis-region.txt"
+    gzip "${chr}-${cell_type}-${model}-quasar-cis-variant.txt"
+    gzip "${chr}-${cell_type}-${model}-quasar-cis-region.txt"
     """
 }
 

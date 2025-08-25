@@ -27,7 +27,7 @@ quasar_variant_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   mutate(
     chr = str_extract(quasar_file, "chr[0-9]+"),
     cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
-    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-quasar)")),
   ) |>
   mutate(method = paste0("quasar-", model)) |>
   select(-model) |>
@@ -76,7 +76,7 @@ quasar_gene_data <- tibble(quasar_file = to_r_vec(args[5])) |>
   mutate(
     chr = str_extract(quasar_file, "chr[0-9]+"),
     cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
-    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-quasar)")),
   ) |>
   mutate(method = paste0("quasar-", model)) |>
   select(-model) |>
@@ -378,7 +378,7 @@ upset_plot_data <- tibble(quasar_file = to_r_vec(args[5])) |>
   mutate(
     chr = str_extract(quasar_file, "chr[0-9]+"),
     cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
-    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-quasar)")),
   ) |> 
   filter(model != "p_glm") |>
   filter(cell_type == "B IN") |>

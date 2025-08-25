@@ -21,7 +21,7 @@ quasar_files_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   mutate(
     chr = str_extract(quasar_file, "chr[0-9]+"),
     cell_type = str_extract(quasar_file, "chr[0-9]+-(.*?)-", group = 1),
-    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-cis)")),
+    model = str_extract(quasar_file, glue("(?<={cell_type}-).*?(?=-quasar)")),
   ) |>
   filter(cell_type == "B IN")
 
