@@ -128,8 +128,33 @@ time_plot <- plot_data |>
   ggplot(aes(method, min, fill = cell_type)) +
   geom_col(position = "dodge2") +
   coord_flip() +
-  facet_wrap(~model_type, scales = "free") + 
+  facet_wrap(~model_type, scales = "free") +
   scale_fill_manual(values = cell_type_cols) +
+  labs(
+    y = "Time (min)",
+    fill = "Cell type",
+    x = "Method"
+  ) +
+  theme_jp_vgrid() +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+
+quasar_time_plot <- quasar_data |>
+  add_row(cell_type = "B IN", method = "quasar-nb_glmm", time = 0) |>
+  add_row(cell_type = "CD4 NC", method = "quasar-nb_glmm", time = 0) |>
+  mutate(type = if_else(method %in% c("quasar-p_glmm", "quasar-nb_glmm"), "Slow", "Fast")) |> 
+  mutate(
+    method = fct_reorder(factor(method_lookup[method]), time, .fun = max, .desc = TRUE),
+    cell_type = factor(cell_type, levels = c("CD4 NC", "B IN", "Plasma"))
+  ) |>
+  mutate(min = time / 60) |>
+  ggplot(aes(method, min, fill = cell_type)) +
+  geom_col(position = "dodge2") +
+  coord_flip() +
+  scale_fill_manual(values = cell_type_cols) +
+  facet_wrap(~type, scales = "free") + 
   labs(
     y = "Time (min)",
     fill = "Cell type",
@@ -146,6 +171,13 @@ saveRDS(time_plot, "plot-time.rds")
 ggsave(
   "plot-time.pdf",
   time_plot,
+  width = 10,
+  height = 6
+)
+
+ggsave(
+  "plot-quasar-time.pdf",
+  quasar_time_plot,
   width = 10,
   height = 6
 )

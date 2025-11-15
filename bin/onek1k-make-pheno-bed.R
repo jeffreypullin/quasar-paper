@@ -22,10 +22,13 @@ pheno_bed <- inner_join(feat_anno, pheno, by = "feature_id") |>
   relocate(phenotype_id, .after = end) |>
   arrange(`#chr`, start)
 
-mat <- as.matrix(pheno_bed[, 5:ncol(pheno_bed)])
-ind <- which(rowSums(mat) == 0)
-if (length(ind) > 0) {
-  pheno_bed <- slice(pheno_bed, -ind)
+if (pb_type == "sum") {
+  mat <- as.matrix(pheno_bed[, 5:ncol(pheno_bed)])
+  cv <- apply(mat, 1, function(x) sd(x) / mean(x))
+  n_top <- ceiling(length(cv) * 0.005)
+  top_idx <- order(cv, decreasing = TRUE)[1:n_top]
+  pheno_bed <- pheno_bed |>
+    slice(-top_idx)
 }
 
 write_tsv(

@@ -29,7 +29,7 @@ quasar_variant_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   select(-model) |>
   filter(method != "quasar-nb_glmm") |>
   filter(method != "quasar-p_glm") |>
-  expand_grid(alpha_level = c(1e-2, 1e-4, 1e-5)) |>
+  expand_grid(alpha_level = c(1e-2, 1e-3)) |>
   rowwise() |>
   mutate(pvalues = list(fread(quasar_file, select = "pvalue")$pvalue)) |>
   mutate(
@@ -45,7 +45,7 @@ tensorqtl_variant_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
     method = "tensorqtl"
   ) |>
   rowwise() |>
-  expand_grid(alpha_level = c(1e-2, 1e-4, 1e-5)) |>
+  expand_grid(alpha_level = c(1e-2, 1e-3)) |>
   rowwise() |>
   mutate(pvalues = list(read_parquet(tensorqtl_file, col_select = "pval_nominal")$pval_nominal)) |>
   mutate(
@@ -62,7 +62,7 @@ jaxqtl_variant_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
   ) |>
   summarise(jaxqtl_file = list(jaxqtl_file), .by = c("chr", "cell_type")) |>
   mutate(method = "jaxqtl") |>
-  expand_grid(alpha_level = c(1e-2, 1e-4, 1e-5)) |>
+  expand_grid(alpha_level = c(1e-2, 1e-3)) |>
   rowwise() |>
   mutate(n = sum(map_dbl(
     jaxqtl_file,
@@ -98,7 +98,7 @@ variant_plot_data <- bind_rows(
   select(-ends_with("file"))
 
 data_hline <- tibble(
-  alpha_level = c(1e-2, 1e-4, 1e-5),
+  alpha_level = c(1e-2, 1e-3),
 )
 
 p1 <- variant_plot_data |>

@@ -1,8 +1,9 @@
-name: quasar-paper
+name: scanpy
 channels:
   - conda-forge
 dependencies:
-  - scanpy
+  - python=3.10.9
+  - scanpy=1.11
   - python-igraph
   - leidenalg
   - openpyxl

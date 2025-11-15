@@ -23,7 +23,7 @@ process RUN_QUASAR {
       ${grm_flag} \
       -o "${chr}-${cell_type}-${model}" \
       --model $passed_model \
-      --mode                                                                                          cis \
+      --mode                                                                                                                                                                                              cis \
       ${apl_flag} \
       --verbose
     gzip "${chr}-${cell_type}-${model}-quasar-cis-variant.txt"
@@ -127,7 +127,7 @@ process RUN_TENSORQTL_CIS {
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
     /usr/bin/time -p -o "${cell_type}-time.txt" \
-      python3 -m tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
+      python3 -m   tensorqtl "$prefix" "$pheno" "onek1k-${cell_type}" \
       --covariates "$covs" \
       --mode cis
     """

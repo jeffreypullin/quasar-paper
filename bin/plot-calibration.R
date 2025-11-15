@@ -18,27 +18,30 @@ suppressPackageStartupMessages({
 source("/home/jp2045/quasar-paper/code/plot-utils.R")
 args <- commandArgs(trailingOnly = TRUE)
 
-compute_qq_data <- function(files, type) {
+compute_qq_data <- function(files, type, method) {
 
-   if (type == "quasar") {
-     read_f <- function(x) read_tsv(x)$pvalue
-   } else if (type %in% c("tensorqtl", "jaxqtl")) {
-     read_f <- function(x) read_parquet(x)$pval_nominal
-   } else if (type == "apex") {
-     read_f <- function(x) read_tsv(x)$pval
-   }
+  if (type == "quasar") {
+    read_f <- function(x) read_tsv(x)$pvalue
+  } else if (type %in% c("tensorqtl", "jaxqtl")) {
+    read_f <- function(x) read_parquet(x)$pval_nominal
+  } else if (type == "apex") {
+    read_f <- function(x) read_tsv(x)$pval
+  }
 
-   pvalue <- unlist(map(files, read_f))
-   n <- length(pvalue)
-   y_pvalue <- sort(pvalue)
-   x_pvalue <- 1:n / (n + 1)
-   log_y_pvalue <- -log10(y_pvalue) 
-   log_x_pvalue <- -log10(x_pvalue)
-   x_bin <- cut(log_x_pvalue, breaks = seq(0, 7, by = 0.1), include.lowest = TRUE) 
+  pvalue <- unlist(map(files, read_f))
+  n <- length(pvalue)
+  y_pvalue <- sort(pvalue)
+  x_pvalue <- 1:n / (n + 1)
+  log_x_pvalue <- -log10(x_pvalue)
+  x_bin <- cut(
+    log_x_pvalue,
+    breaks = seq(0, 6, by = 0.1),
+    include.lowest = TRUE
+  )
 
-   tibble(x_bin, log_y_pvalue) |>
-     summarise(log_y_pvalue = mean(log_y_pvalue), .by = x_bin) |>
-     mutate(log_x_bin_mid = seq(0.05, 6.95, by = 0.1)[as.numeric(x_bin)])
+  tibble(x_bin, y_pvalue) |>
+    summarise(log_y_pvalue = -log10(mean(y_pvalue)), .by = x_bin) |>
+    mutate(log_x_bin_mid = seq(0.05, 5.95, by = 0.1)[as.numeric(x_bin)])
 }
 
 # Variant level analysis.
@@ -54,31 +57,30 @@ quasar_variant_data <- tibble(quasar_file = to_r_vec(args[1])) |>
   filter(method != "quasar-nb_glmm") |>
   summarise(file_list = list(quasar_file), .by = c(method, cell_type)) |>
   rowwise() |>
-  mutate(qq_data = list(compute_qq_data(file_list, "quasar"))) |>
+  mutate(qq_data = list(compute_qq_data(file_list, "quasar", method))) |>
   ungroup() |>
   mutate(
-   method = factor(method_lookup[method]),
-   cell_type = factor(cell_type, levels = c("Plasma", "B IN", "CD4 NC"))
+    method = factor(method_lookup[method]),
+    cell_type = factor(cell_type, levels = c("Plasma", "B IN", "CD4 NC"))
   ) |>
   select(-file_list) |>
   unnest(cols = qq_data)
 
 p <- quasar_variant_data |>
   ggplot(aes(log_x_bin_mid, log_y_pvalue, colour = cell_type)) +
-  geom_point(alpha = 0.8) + 
-  geom_abline(linetype = "dashed") + 
-  facet_wrap(~ method) + 
-  coord_cartesian(ylim = c(0, 7.5)) +
+  geom_point(alpha = 0.8) +
+  geom_abline(linetype = "dashed") +
+  facet_wrap(~ method) +
   scale_colour_manual(values = cell_type_cols) +
   labs(
     x = "Expected -log10(p-value)",
-    y = "Observed -log1o(p-value)",
+    y = "Observed -log10(p-value)",
     colour = "Cell type"
   ) +
   theme_jp()
 
 ggsave(
-  "plot-quasar-variant-fdr.pdf", 
+  "/home/jp2045/quasar-paper/output/plot-quasar-variant-fdr.pdf",
   p,
   width = 10,
   height = 8
@@ -91,7 +93,7 @@ tensorqtl_data <- tibble(tensorqtl_file = to_r_vec(args[2])) |>
   ) |>
   summarise(file_list = list(tensorqtl_file), .by = c(method, cell_type)) |>
   rowwise() |>
-  mutate(qq_data = list(compute_qq_data(file_list, "tensorqtl"))) |>
+  mutate(qq_data = list(compute_qq_data(file_list, "tensorqtl", method))) |>
   ungroup()
 
 jaxqtl_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
@@ -102,7 +104,7 @@ jaxqtl_data <- tibble(jaxqtl_file = to_r_vec(args[3])) |>
   mutate(method = "jaxqtl") |>
   summarise(file_list = list(jaxqtl_file), .by = c(method, cell_type)) |>
   rowwise() |>
-  mutate(qq_data = list(compute_qq_data(file_list, "jaxqtl"))) |>
+  mutate(qq_data = list(compute_qq_data(file_list, "jaxqtl", method))) |>
   ungroup()
 
 apex_data <- tibble(apex_file = to_r_vec(args[4])) |>
@@ -113,7 +115,7 @@ apex_data <- tibble(apex_file = to_r_vec(args[4])) |>
   ) |>
   summarise(file_list = list(apex_file), .by = c(method, cell_type)) |>
   rowwise() |>
-  mutate(qq_data = list(compute_qq_data(file_list, "apex"))) |>
+  mutate(qq_data = list(compute_qq_data(file_list, "apex", method))) |>
   ungroup()
 
 other_variant_data <- bind_rows(jaxqtl_data, tensorqtl_data, apex_data) |>
@@ -143,11 +145,10 @@ p2 <- other_variant_data |>
   geom_point(alpha = 0.8) + 
   geom_abline(linetype = "dashed") + 
   facet_wrap(~ method, ncol = 1) + 
-  coord_cartesian(ylim = c(0, 7.5)) +
   scale_colour_manual(values = cell_type_cols) +
   labs(
     x = "Expected -log10(p-value)",
-    y = "Observed -log1o(p-value)",
+    y = "Observed -log10(p-value)",
     colour = "Cell type"
   ) +
   theme_jp()
@@ -187,13 +188,12 @@ quasar_gene_data <- tibble(quasar_file = to_r_vec(args[5])) |>
   mutate(
     y_pvalue = sort(pvalue),
     x_pvalue = 1:n() / (n() + 1),
-    log_y_pvalue = -log10(y_pvalue), 
     log_x_pvalue = -log10(x_pvalue),
-    x_bin = cut(log_x_pvalue, breaks = seq(0, 7, by = 0.1), include.lowest = TRUE),
+    x_bin = cut(log_x_pvalue, breaks = seq(0, 3, by = 0.05), include.lowest = TRUE),
     .by = c(method, cell_type)
   ) |>
-  summarise(log_y_pvalue = mean(log_y_pvalue), .by = c(method, cell_type, x_bin)) |>
-  mutate(log_x_bin_mid = seq(0.05, 6.95, by = 0.1)[as.numeric(x_bin)]) |>
+  summarise(log_y_pvalue = -log10(mean(y_pvalue)), .by = c(method, cell_type, x_bin)) |>
+  mutate(log_x_bin_mid = seq(0.05, 2.95, by = 0.05)[as.numeric(x_bin)]) |>
   mutate(
    method = factor(method_lookup[method]),
    cell_type = factor(cell_type, levels = c("Plasma", "B IN", "CD4 NC"))
@@ -243,13 +243,12 @@ other_plot_data <- bind_rows(
   mutate(
     y_pvalue = sort(pvalue),
     x_pvalue = 1:n() / (n() + 1),
-    log_y_pvalue = -log10(y_pvalue), 
     log_x_pvalue = -log10(x_pvalue),
-    x_bin = cut(log_x_pvalue, breaks = seq(0, 7, by = 0.1), include.lowest = TRUE),
+    x_bin = cut(log_x_pvalue, breaks = seq(0, 3, by = 0.05), include.lowest = TRUE),
     .by = c(method, cell_type)
   ) |>
-  summarise(log_y_pvalue = mean(log_y_pvalue), .by = c(method, cell_type, x_bin)) |>
-  mutate(log_x_bin_mid = seq(0.05, 6.95, by = 0.1)[as.numeric(x_bin)]) |>
+  summarise(log_y_pvalue = -log10(mean(y_pvalue)), .by = c(method, cell_type, x_bin)) |>
+  mutate(log_x_bin_mid = seq(0.05, 2.95, by = 0.05)[as.numeric(x_bin)]) |>
   mutate(
    method = factor(method_lookup[method]),
    cell_type = factor(cell_type, levels = c("Plasma", "B IN", "CD4 NC"))
@@ -274,7 +273,7 @@ p2 <- other_plot_data |>
   geom_point(alpha = 0.8) +
   geom_abline(linetype = "dashed") +
   facet_wrap(~ method, ncol = 1) +
-  coord_cartesian(ylim = c(0, 6)) +
+  coord_cartesian(ylim = c(0, 4.5)) +
   scale_colour_manual(values = cell_type_cols) +
   labs(
     x = "Expected -log10(p-value)",

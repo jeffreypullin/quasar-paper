@@ -1,17 +1,18 @@
 #!/usr/bin/env nextflow
 
 params.onek1k_raw_single_cell_data = file("data/onek1k/OneK1K_cohort_gene_expression_matrix_14_celltypes.h5ad.gz")
-params.onek1k_supp_tables = file("data/onek1k/science.abf3041_tables_s6_to_s19/science.abf3041_tables_s6_to_s19.xlsx")
 params.onek1k_feature_annot = file("data/onek1k/Homo_sapiens.GRCh37.82.bed")
 params.onek1k_cell_types = [
     'CD4 NC', 'CD4 ET', 'CD4 SOX4', 'CD8 ET', 'CD8 NC', 'CD8 S100B', 'NK', 
     'NK R', 'Plasma', 'B Mem', 'B IN', 'Mono C', 'Mono NC', 'DC'
 ]
-params.pb_types = ['mean', 'sum']
+params.pb_types = ['mean', 'sum', 'sum-no-filt']
 params.quasar_spec = "data/quasar-spec.tsv"
 
 include { RUN_APEX; RUN_QUASAR; RUN_JAXQTL_CIS; RUN_JAXQTL_CIS_NOMINAL; RUN_TENSORQTL_CIS; RUN_TENSORQTL_CIS_NOMINAL } from './modules/methods'
 include { RUN_QUASAR as RUN_QUASAR_PERM } from './modules/methods'
+include { RUN_QUASAR as RUN_QUASAR_OTHER } from './modules/methods'
+include { RUN_QUASAR as RUN_QUASAR_PERM_OTHER } from './modules/methods'
 include { RUN_JAXQTL_CIS_NOMINAL as RUN_JAXQTL_CIS_NOMINAL_PERM} from './modules/methods'
 include { RUN_JAXQTL_CIS as RUN_JAXQTL_CIS_PERM} from './modules/methods'
 include { RUN_TENSORQTL_CIS_NOMINAL as RUN_TENSORQTL_CIS_NOMINAL_PERM} from './modules/methods'
@@ -25,11 +26,7 @@ workflow {
     pb_spec = cell_types
         .combine(pb_types)
 
-    cell_type_pb = ONEK1K_CREATE_CELLTYPE_PB(
-        pb_spec,
-        params.onek1k_raw_single_cell_data,
-        params.onek1k_supp_tables
-    )
+    cell_type_pb = ONEK1K_CREATE_CELLTYPE_PB(pb_spec, params.onek1k_raw_single_cell_data)
     vcf_files = channel.fromFilePairs(
         "data/onek1k/chr*.dose.filtered.R2_0.8.vcf.gz",
         size: 1, 
@@ -69,7 +66,8 @@ workflow {
                        (it[1] == "Plasma") })
       .filter( { it -> it[7] != "nb_glmm-apl"})
 
-    quasar = RUN_QUASAR(quasar_input)
+    quasar = RUN_QUASAR(quasar_input.filter({it[2] != "sum-no-filt"}))
+    quasar_other = RUN_QUASAR_OTHER(quasar_input.filter({it[2] == "sum-no-filt"}))
 
     // Run TensorQTL.
     norm_pheno_bed = NORMALISE_PHENO_BED(pheno_bed
@@ -130,27 +128,28 @@ workflow {
 
     // Run permutation analysis
     rep_bed_files = bed_files
-      .filter({ it -> it[0] == "chr22"})
+      .filter({ it -> it[0] == "chr21"})
       .combine(channel.of(1..10))
 
     permute_bed_files = PERMUTE_BED(rep_bed_files)
 
     rep_vcf_files = filt_vcf_files
-      .filter({ it -> it[0] == "chr22"})
+      .filter({ it -> it[0] == "chr21"})
       .combine(channel.of(1..10))
 
     permute_vcf_files = PERMUTE_VCF(rep_vcf_files)
     
     permute_quasar_input = quasar_input
       .filter( {it -> it[1] == "B IN" || it[1] == "Plasma" || it[1] == "CD4 NC" } )
-      .filter( {it -> it[0] == "chr22" })
+      .filter( {it -> it[0] == "chr21" })
       .combine(permute_bed_files, by: 0)
       .map({ it -> [it[0], it[1], it[2], it[3], it[8], it[5], it[6], it[7]]})
 
-    quasar_perm = RUN_QUASAR_PERM(permute_quasar_input)
-
+    quasar_perm = RUN_QUASAR_PERM(permute_quasar_input.filter({it[2] != "sum-no-filt"}))
+    quasar_perm_other = RUN_QUASAR_PERM_OTHER(permute_quasar_input.filter({it[2] == "sum-no-filt"}))
+    
     permute_jaxqtl_input = jaxqtl_input
-      .filter({it[0] == "chr22"})
+      .filter({it[0] == "chr21"})
       .combine(permute_bed_files, by: 0)
       .map({ it -> [it[0], it[1], it[2], it[3], it[4], it[8], it[6], it[7]]})
 
@@ -165,7 +164,7 @@ workflow {
     tensorqtl_cis_perm = RUN_TENSORQTL_CIS_PERM(permute_tensorqtl_input)
 
     permute_apex_input = apex_input
-      .filter( { it -> it[0] == "chr22"})
+      .filter( { it -> it[0] == "chr21"})
       .combine(permute_vcf_files, by: 0)
       .map( {it -> [it[0], it[1], it[2], it[3], it[4], it[9], it[10], it[7], it[8]]})
 
@@ -175,6 +174,10 @@ workflow {
     ind_channel = channel.of(1)
 
     quasar_grouped = ind_channel
+        .combine(quasar)
+        .groupTuple()
+    
+    quasar_other_grouped = ind_channel
         .combine(quasar)
         .groupTuple()
 
@@ -202,6 +205,10 @@ workflow {
     // Permutation data.
     quasar_perm_grouped = ind_channel
         .combine(quasar_perm)
+        .groupTuple()
+
+    quasar_perm_other_grouped = ind_channel
+        .combine(quasar_perm_other)
         .groupTuple()
 
     jaxqtl_cis_nominal_perm_grouped = ind_channel
@@ -279,9 +286,17 @@ workflow {
        tensorqtl_cis_perm_grouped
     )    
 
+    PLOT_FILTER(
+        quasar_perm_grouped,
+        quasar_perm_other_grouped
+    )
+
     PLOT_ADDITIONAL(time_out.map({ it -> it[2] }), concordance_out.map({it -> it[1]})) 
 
     PLOT_SIMS(grm)
+
+    COUNT_INDIVIDUALS(pheno_bed.map({it -> it[2]}).collect())
+    COUNT_CELLS(params.onek1k_raw_single_cell_data)
 }
  
 // OneK1K data.
@@ -304,14 +319,13 @@ process ONEK1K_CREATE_CELLTYPE_PB {
     input:
         tuple val(cell_type), val(pb_type) 
         val raw_sc_data
-        val supp_tables
     output: tuple val(cell_type), val(pb_type),
         path("onek1k-${cell_type}-cov.tsv"), 
         path("onek1k-${cell_type}-pheno-${pb_type}.txt")
 
     script:
     """
-    onek1k-create-cell-type-pb.py $raw_sc_data $supp_tables "${cell_type}" $pb_type
+    onek1k-create-cell-type-pb.py $raw_sc_data "${cell_type}" $pb_type
     """
 }
 
@@ -377,7 +391,7 @@ process ONEK1K_COMPUTE_GENOTYPE_PCS {
     script:
     def prefix = "${bed.getParent().toString() + '/' + bed.getSimpleName()}"
     """
-    plink2 --bfile $prefix --indep-pairwise 50000 200 0.05 --out onek1k_pruned_variants --threads 2 --const-fid 
+    plink2 --bfile $prefix --indep-pairwise 250 100 0.3 --rm-dup exclude-mismatch --out onek1k_pruned_variants --threads 2 --const-fid 
     plink2 --bfile $prefix --extract onek1k_pruned_variants.prune.in --make-bed --out onek1k_pruned --const-fid 
     plink2 --bfile onek1k_pruned --pca 10
 
@@ -615,7 +629,7 @@ process PLOT_TIME {
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
         tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
         tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
-    output: tuple path("plot-time.pdf"), path("time-data.csv"), path("plot-time.rds")
+    output: tuple path("plot-time.pdf"), path("time-data.csv"), path("plot-time.rds"), path("plot-quasar-time.pdf")
 
     script:
     """
@@ -683,6 +697,22 @@ process PLOT_FDR {
     """
 }
 
+process PLOT_FILTER {
+    publishDir "output"
+
+    input:
+        tuple val(ind), val(cell_type), val(chrs), val(quasar_region_list), val(quasar_perm_pairs_list), val(quasar_time)
+        tuple val(ind), val(cell_type), val(chrs), val(quasar_region_list), val(quasar_perm_other_pairs_list), val(quasar_time)
+    output: path("plot-filter.pdf")
+
+    script: 
+    """
+    plot-filter.R \
+        "${quasar_perm_pairs_list.collect()}" \
+        "${quasar_perm_other_pairs_list.collect()}"
+    """
+}
+
 process PLOT_SUPP {
     publishDir "output"
 
@@ -714,6 +744,33 @@ process PLOT_ADDITIONAL {
     plot-additional.R $time_plot $concordance_plot
     """
 
+}
+
+process COUNT_INDIVIDUALS {
+    publishDir "output"
+    
+
+    input: val(pheno_beds)
+    output: path("n-indiv.tsv")
+
+    script: 
+    """
+    count-individuals.R "$pheno_beds"
+    """
+}
+
+process COUNT_CELLS {
+    publishDir "output"
+    conda "$projectDir/envs/scanpy.yaml"
+    label "tiny"
+
+    input: val(sc_data)
+    output: path("n-cells.tsv")
+
+    script: 
+    """
+    count-cells.py "$sc_data"
+    """
 }
 
 process PLOT_SIMS {
