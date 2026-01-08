@@ -297,6 +297,14 @@ workflow {
 
     COUNT_INDIVIDUALS(pheno_bed.map({it -> it[2]}).collect())
     COUNT_CELLS(params.onek1k_raw_single_cell_data)
+
+    example_data_input = quasar_input
+        .filter({it[2] != "sum-no-filt"})
+        .filter({it[0] == "chr22"})
+        .filter({it[1] == "B IN"})
+        .filter({it[7] == "nb_glm" || it[7] == "lm" || it[7] == "lmm"})
+
+    CREATE_EXAMPLE_DATA(example_data_input)
 }
  
 // OneK1K data.
@@ -782,5 +790,23 @@ process PLOT_SIMS {
     script:
     """
     plot-trace-approx-sims.R $grm
+    """
+}
+
+process CREATE_EXAMPLE_DATA {
+    conda "$projectDir/envs/cli.yaml"
+    publishDir "output"
+
+    input: input: tuple val(chr), val(cell_type), val(pb_type), val(pheno_bed), 
+        val(plink_bed), val(covs), val(grm), val(model)
+    output: tuple path("chr22-n100.bed"), path("chr22-n100.bim"), path("chr22-n100.fam"),
+      path("cov-n100.tsv"), path("grm-n100.tsv"), path("${pb_type}-pheno-n100.bed")
+
+    script:
+    def prefix = "${plink_bed.getParent().toString() + '/' + plink_bed.getSimpleName()}"
+    """ 
+    awk '{print \$2}' ${prefix}.fam | head -n 100 > first_100_ids.txt
+    plink2 --bfile $prefix --keep first_100_ids.txt --make-bed --out chr22-n100
+    make-example-data.R first_100_ids.txt "$covs" "$pheno_bed" "$grm" $pb_type
     """
 }
