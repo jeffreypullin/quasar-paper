@@ -10,6 +10,7 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(glue)
   library(data.table)
+  library(forcats)
 })
 
 # FIXME: Make this more reproducible.
@@ -164,6 +165,11 @@ plot_data <- bind_rows(
 
 p <- plot_data |>
   mutate(model = factor(model, levels = c("LM", "NB-GLM", "LMM"))) |>
+  mutate(model = fct_recode(model, 
+    `LM (tensorQTL)` = "LM", 
+    `NB GLM (jaxQTL)` = "NB-GLM",
+    `LMM (apex)` = "LMM",
+  )) |>
   ggplot(aes(z_quasar, value)) +
   geom_point() +
   geom_abline() +
