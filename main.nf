@@ -243,15 +243,15 @@ workflow {
 
     count_data = pheno_bed.filter({ it -> it[0] == "B IN" && it[1] == "sum"})
     
-    PLOT_POWER(
-        quasar_grouped,
-        tensorqtl_cis_nominal_grouped,
-        tensorqtl_cis_grouped,
-        jaxqtl_cis_nominal_grouped,
-        jaxqtl_cis_grouped,
-        apex_grouped,
-        count_data
-    )     
+    //PLOT_POWER(
+    //    quasar_grouped,
+    //    tensorqtl_cis_nominal_grouped,
+    //    tensorqtl_cis_grouped,
+    //    jaxqtl_cis_nominal_grouped,
+    //    jaxqtl_cis_grouped,
+    //    apex_grouped,
+    //    count_data
+    //)     
     
     time_out = PLOT_TIME(
         quasar_grouped,
@@ -262,7 +262,25 @@ workflow {
         apex_grouped
     )
 
-    PLOT_CALIBRATION(
+    //PLOT_CALIBRATION(
+    //   quasar_perm_grouped,
+    //   tensorqtl_cis_nominal_perm_grouped,
+    //   tensorqtl_cis_perm_grouped,
+    //   jaxqtl_cis_nominal_perm_grouped,
+    //   jaxqtl_cis_perm_grouped,
+    //   apex_perm_grouped
+    //) 
+
+    //PLOT_FDR(
+    //   quasar_perm_grouped,
+    //   tensorqtl_cis_nominal_perm_grouped,
+    //   tensorqtl_cis_perm_grouped,
+    //   jaxqtl_cis_nominal_perm_grouped,
+    //   jaxqtl_cis_perm_grouped,
+    //   apex_perm_grouped
+    //) 
+
+    COMPUTE_GENOMIC_INFLATION(
        quasar_perm_grouped,
        tensorqtl_cis_nominal_perm_grouped,
        tensorqtl_cis_perm_grouped,
@@ -271,40 +289,36 @@ workflow {
        apex_perm_grouped
     ) 
 
-     PLOT_FDR(
-       quasar_perm_grouped,
-       tensorqtl_cis_nominal_perm_grouped,
-       tensorqtl_cis_perm_grouped,
-       jaxqtl_cis_nominal_perm_grouped,
-       jaxqtl_cis_perm_grouped,
-       apex_perm_grouped
-    ) 
+    //PLOT_SUPP(
+    //   quasar_grouped,
+    //   tensorqtl_cis_nominal_perm_grouped,
+    //   tensorqtl_cis_perm_grouped
+    //)    
 
-    PLOT_SUPP(
-       quasar_grouped,
-       tensorqtl_cis_nominal_perm_grouped,
-       tensorqtl_cis_perm_grouped
-    )    
+    //PLOT_FILTER(
+    //    quasar_perm_grouped,
+    //    quasar_perm_other_grouped
+    //)
 
-    PLOT_FILTER(
-        quasar_perm_grouped,
-        quasar_perm_other_grouped
-    )
+    //PLOT_ADDITIONAL(time_out.map({ it -> it[2] }), concordance_out.map({it -> it[1]})) 
 
-    PLOT_ADDITIONAL(time_out.map({ it -> it[2] }), concordance_out.map({it -> it[1]})) 
+    //PLOT_SIMS(grm)
 
-    PLOT_SIMS(grm)
+    //COUNT_INDIVIDUALS(pheno_bed.map({it -> it[2]}).collect())
+    //COUNT_CELLS(params.onek1k_raw_single_cell_data)
+    clumped_quasar = CLUMP_VARIANTS(quasar, all_bed)
+    clumped_quasar_grouped = ind_channel
+        .combine(clumped_quasar)
+        .groupTuple()
+    //PLOT_CLUMPED(clumped_quasar_grouped)
 
-    COUNT_INDIVIDUALS(pheno_bed.map({it -> it[2]}).collect())
-    COUNT_CELLS(params.onek1k_raw_single_cell_data)
+    //example_data_input = quasar_input
+    //    .filter({it[2] != "sum-no-filt"})
+    //    .filter({it[0] == "chr22"})
+    //    .filter({it[1] == "B IN"})
+    //    .filter({it[7] == "nb_glm" || it[7] == "lm" || it[7] == "lmm"})
 
-    example_data_input = quasar_input
-        .filter({it[2] != "sum-no-filt"})
-        .filter({it[0] == "chr22"})
-        .filter({it[1] == "B IN"})
-        .filter({it[7] == "nb_glm" || it[7] == "lm" || it[7] == "lmm"})
-
-    CREATE_EXAMPLE_DATA(example_data_input)
+    //CREATE_EXAMPLE_DATA(example_data_input)
 }
  
 // OneK1K data.
@@ -808,5 +822,75 @@ process CREATE_EXAMPLE_DATA {
     awk '{print \$2}' ${prefix}.fam | head -n 100 > first_100_ids.txt
     plink2 --bfile $prefix --keep first_100_ids.txt --make-bed --out chr22-n100
     make-example-data.R first_100_ids.txt "$covs" "$pheno_bed" "$grm" $pb_type
+    """
+}
+
+process CLUMP_VARIANTS {
+    label "long_nano"
+
+    input:
+        tuple val(chr), val(cell_type), val(region_file), val(variant_file), val(time_file)
+        val all_bed
+    output: tuple val(chr), val(cell_type), val(region_file), val(variant_file), val(time_file), path("*-harmonised-clumps.tsv")
+
+    script:
+    def prefix = all_bed.getParent().toString() + '/' + all_bed.getSimpleName()
+    """
+    prepare-clump-inputs.R "$variant_file"
+
+    for assoc in assoc-*.tsv; do
+      fid="\${assoc#assoc-}"
+      fid="\${fid%.tsv}"
+      plink2 \
+        --bfile "${prefix}" \
+        --clump "\$assoc" \
+        --clump-p1 5e-6 \
+        --clump-p2 5e-2 \
+        --clump-r2 0.5 \
+        --out "clump-\${fid}"
+    done
+
+    harmonise-clump-files.R "${chr}" "${cell_type}" "$variant_file"
+    rm assoc-*
+    rm clump-*
+    """
+}
+
+process PLOT_CLUMPED  {
+    publishDir "output"
+
+    input: 
+        tuple val(ind), val(cell_type), val(chrs), val(quasar_region), val(quasar_pairs_list), val(quasar_time), val(quasar_clumped)
+    output: path("clumped-n-independent-eqtls-plot.pdf")
+
+    script:
+    """
+    plot-clumped.R "${quasar_clumped.collect()}"
+    """
+}
+
+process COMPUTE_GENOMIC_INFLATION {
+    publishDir "output"
+
+    input:
+       tuple val(ind), val(cell_type), val(chrs), val(quasar_region_list), val(quasar_pairs_list), val(quasar_time)
+       tuple val(ind), val(cell_type), val(tensorqtl_pairs_list), val(tensorqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(tensorqtl_cis_list), val(tensorqtl_cis_time)
+       tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_pairs_list), val(jaxqtl_cis_nominal_time)
+       tuple val(ind), val(cell_type), val(chrs), val(jaxqtl_cis_list), val(jaxqtl_cis_time)
+       tuple val(ind), val(cell_type), val(chrs), val(apex_region_list), val(apex_pairs_list), val(apex_time)
+    output: path("genomic-inflation.tsv")
+
+    script:
+    """
+    compute-genomic-inflation.R \
+        "${quasar_pairs_list.collect()}" \
+        "${tensorqtl_pairs_list.collect()}" \
+        "${jaxqtl_pairs_list.collect()}" \
+        "${apex_pairs_list.collect()}" \
+        "${quasar_region_list.collect()}" \
+        "${tensorqtl_cis_list.collect()}" \
+        "${jaxqtl_cis_list.collect()}" \
+        "${apex_region_list.collect()}"
     """
 }
