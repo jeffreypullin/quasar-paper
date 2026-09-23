@@ -280,14 +280,14 @@ workflow {
     //   apex_perm_grouped
     //) 
 
-    COMPUTE_GENOMIC_INFLATION(
-       quasar_perm_grouped,
-       tensorqtl_cis_nominal_perm_grouped,
-       tensorqtl_cis_perm_grouped,
-       jaxqtl_cis_nominal_perm_grouped,
-       jaxqtl_cis_perm_grouped,
-       apex_perm_grouped
-    ) 
+    //COMPUTE_GENOMIC_INFLATION(
+    //   quasar_perm_grouped,
+    //   tensorqtl_cis_nominal_perm_grouped,
+    //   tensorqtl_cis_perm_grouped,
+    //   jaxqtl_cis_nominal_perm_grouped,
+    //   jaxqtl_cis_perm_grouped,
+    //   apex_perm_grouped
+    //) 
 
     //PLOT_SUPP(
     //   quasar_grouped,
@@ -300,7 +300,7 @@ workflow {
     //    quasar_perm_other_grouped
     //)
 
-    //PLOT_ADDITIONAL(time_out.map({ it -> it[2] }), concordance_out.map({it -> it[1]})) 
+    PLOT_ADDITIONAL(time_out.map({ it -> it[2] }), concordance_out.map({it -> it[1]})) 
 
     //PLOT_SIMS(grm)
 
