@@ -94,7 +94,7 @@ glm_qtl_data <- left_join(
 glm_plot_data_list <- list()
 for (i in seq_len(nrow(glm_qtl_data))) {
 
-  quasar_data <- fread(lm_qtl_data$quasar_file[[i]])
+  quasar_data <- fread(glm_qtl_data$quasar_file[[i]])
   jaxqtl_data <- bind_rows(
     lapply(glm_qtl_data$jaxqtl_file[[i]], read_parquet)
   )
@@ -104,8 +104,13 @@ for (i in seq_len(nrow(glm_qtl_data))) {
     jaxqtl_data,
     by = c("snp_id" = "snp", "feature_id" = "phenotype_id")
   ) |>
+    # In quasar 1.0.0 two inteacting bugs mades the sign of count and linear
+    # model based methods inconsistent and the sign of the count-based methods
+    # incorrect relative to the documented behavious. See the discussion in
+    # https://github.com/jeffreypullin/quasar/issues/26.
+    # This issue has been fixed from quasar v1.2.
     mutate(
-      z_quasar = beta / se,
+      z_quasar = -(beta / se),
       z_jaxqtl = slope / slope_se
     ) |>
     slice_sample(n = 100)
